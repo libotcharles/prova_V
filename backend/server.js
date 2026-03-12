@@ -1,605 +1,472 @@
-const API_URL = "https://prova-v.onrender.com/api";
-let currentUser = getLoggedUser();
+require('dotenv').config();
 
-document.addEventListener("DOMContentLoaded", () => {
-    const page = getCurrentPage();
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
-    if (page === "login") initLoginPage();
-    if (page === "register") initRegisterPage();
-    if (page === "user") initUserPage();
-    if (page === "admin") initAdminPage();
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// =========================
+// CONFIG SUPABASE
+// =========================
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Errore: SUPABASE_URL o SUPABASE_ANON_KEY mancanti.');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// =========================
+// MIDDLEWARE
+// =========================
+app.use(cors({ origin: '*' }));
+app.use(express.json());
+app.use(express.static(path.join(__dirname)));
+
+// =========================
+// ROOT
+// =========================
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-function getCurrentPage() {
-    const path = window.location.pathname.toLowerCase();
-
-    if (path.endsWith("/register.html")) return "register";
-    if (path.endsWith("/user.html")) return "user";
-    if (path.endsWith("/admin.html")) return "admin";
-
-    return "login";
-}
-
-function getLoggedUser() {
-    try {
-        return JSON.parse(localStorage.getItem("loggedUser"));
-    } catch {
-        return null;
-    }
-}
-
-function setLoggedUser(user) {
-    currentUser = user;
-    localStorage.setItem("loggedUser", JSON.stringify(user));
-}
-
-function clearLoggedUser() {
-    currentUser = null;
-    localStorage.removeItem("loggedUser");
-}
-
-/* LOGIN */
-function initLoginPage() {
-    if (currentUser && currentUser.role === "admin") {
-        window.location.href = "admin.html";
-        return;
-    }
-
-    if (currentUser && currentUser.role === "user") {
-        window.location.href = "user.html";
-        return;
-    }
-
-    const btn = document.getElementById("login-submit");
-    const usernameInput = document.getElementById("login-username");
-    const passwordInput = document.getElementById("login-password");
-
-    if (btn) btn.addEventListener("click", loginUser);
-
-    [usernameInput, passwordInput].forEach(input => {
-        if (!input) return;
-        input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") loginUser();
-        });
-    });
-}
-
-async function loginUser() {
-    const username = document.getElementById("login-username")?.value.trim() || "";
-    const password = document.getElementById("login-password")?.value.trim() || "";
-    const messageBox = document.getElementById("login-message");
-
-    clearMessage(messageBox);
+// =========================
+// AUTH
+// =========================
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '').trim();
 
     if (!username || !password) {
-        showMessage(messageBox, "Inserisci username e password.", "error");
-        return;
+      return res.status(400).json({ error: 'Username e password obbligatori' });
     }
 
-    try {
-        const res = await fetch(`${API_URL}/auth/login`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ username, password })
-        });
+    const { data: user, error } = await supabase
+      .from('profilo')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password)
+      .single();
 
-        const data = await safeJson(res);
-
-        if (!res.ok) {
-            showMessage(messageBox, data.error || "Credenziali non valide.", "error");
-            return;
-        }
-
-        setLoggedUser(data.user);
-
-        if (data.user.role === "admin") {
-            window.location.href = "admin.html";
-        } else {
-            window.location.href = "user.html";
-        }
-    } catch (error) {
-        console.error("Errore login:", error);
-        showMessage(messageBox, "Errore di connessione al server.", "error");
+    if (error || !user) {
+      return res.status(401).json({ error: 'Credenziali non valide' });
     }
-}
 
-/* REGISTER */
-function initRegisterPage() {
-    const btn = document.getElementById("register-submit");
-    const usernameInput = document.getElementById("register-username");
-    const passwordInput = document.getElementById("register-password");
-    const confirmInput = document.getElementById("register-password-confirm");
-
-    if (btn) btn.addEventListener("click", registerUser);
-
-    [usernameInput, passwordInput, confirmInput].forEach(input => {
-        if (!input) return;
-        input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") registerUser();
-        });
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        crediti: user.crediti,
+        role: user.role
+      }
     });
-}
+  } catch (error) {
+    console.error('Errore /api/auth/login:', error);
+    return res.status(500).json({
+      error: 'Errore login',
+      dettaglio: error.message
+    });
+  }
+});
 
-async function registerUser() {
-    const username = document.getElementById("register-username")?.value.trim() || "";
-    const password = document.getElementById("register-password")?.value.trim() || "";
-    const confirmPassword = document.getElementById("register-password-confirm")?.value.trim() || "";
-    const messageBox = document.getElementById("register-message");
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '').trim();
 
-    clearMessage(messageBox);
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username e password obbligatori' });
+    }
 
     if (username.length < 3) {
-        showMessage(messageBox, "Lo username deve avere almeno 3 caratteri.", "error");
-        return;
+      return res.status(400).json({ error: 'Lo username deve avere almeno 3 caratteri' });
     }
 
-    if (!isValidPassword(password)) {
-        showMessage(messageBox, "La password deve avere almeno 6 caratteri e almeno un numero.", "error");
-        return;
+    if (password.length < 6 || !/\d/.test(password)) {
+      return res.status(400).json({ error: 'La password deve avere almeno 6 caratteri e un numero' });
     }
 
-    if (password !== confirmPassword) {
-        showMessage(messageBox, "Le password non coincidono.", "error");
-        return;
+    const { data: existingUser, error: checkError } = await supabase
+      .from('profilo')
+      .select('id')
+      .ilike('username', username)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username già esistente' });
     }
 
-    try {
-        const res = await fetch(`${API_URL}/auth/register`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ username, password })
-        });
-
-        const data = await safeJson(res);
-
-        if (!res.ok) {
-            showMessage(messageBox, data.error || "Errore registrazione.", "error");
-            return;
+    const { data, error } = await supabase
+      .from('profilo')
+      .insert([
+        {
+          username,
+          password,
+          crediti: 1000,
+          role: 'user'
         }
+      ])
+      .select()
+      .single();
 
-        showMessage(messageBox, "Registrazione completata. Verrai reindirizzato al login...", "success");
+    if (error) throw error;
 
-        setTimeout(() => {
-            window.location.href = "index.html";
-        }, 1400);
-    } catch (error) {
-        console.error("Errore register:", error);
-        showMessage(messageBox, "Errore di connessione al server.", "error");
+    return res.status(201).json({
+      success: true,
+      user: {
+        id: data.id,
+        username: data.username,
+        crediti: data.crediti,
+        role: data.role
+      }
+    });
+  } catch (error) {
+    console.error('Errore /api/auth/register:', error);
+    return res.status(500).json({
+      error: 'Errore registrazione',
+      dettaglio: error.message
+    });
+  }
+});
+
+// =========================
+// DATA
+// =========================
+app.get('/api/data', async (req, res) => {
+  try {
+    const { data: prodotti, error: errorProd } = await supabase
+      .from('prodotti')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (errorProd) throw errorProd;
+
+    const { data: profili, error: errorProf } = await supabase
+      .from('profilo')
+      .select('*')
+      .order('id', { ascending: true });
+
+    if (errorProf) throw errorProf;
+
+    res.json({ prodotti, profili });
+  } catch (error) {
+    console.error('ERRORE SUPABASE /api/data:', error);
+    res.status(500).json({
+      messaggio: 'Errore caricamento',
+      dettaglio: error.message
+    });
+  }
+});
+
+// =========================
+// USER
+// =========================
+app.post('/api/buy', async (req, res) => {
+  try {
+    const { prodottoId, userId } = req.body;
+
+    if (!prodottoId || !userId) {
+      return res.status(400).json({
+        error: 'Dati mancanti (prodottoId o userId)'
+      });
     }
-}
 
-function isValidPassword(password) {
-    return password.length >= 6 && /\d/.test(password);
-}
+    const { data: prod, error: prodError } = await supabase
+      .from('prodotti')
+      .select('*')
+      .eq('id', prodottoId)
+      .single();
 
-/* USER */
-function initUserPage() {
-    if (!currentUser) {
-        window.location.href = "index.html";
-        return;
+    if (prodError || !prod) {
+      return res.status(404).json({ error: 'Prodotto non trovato' });
     }
 
-    if (currentUser.role === "admin") {
-        window.location.href = "admin.html";
-        return;
+    const { data: user, error: userError } = await supabase
+      .from('profilo')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
     }
 
-    const logoutBtn = document.getElementById("logout-btn");
-    if (logoutBtn) logoutBtn.addEventListener("click", logoutUser);
+    if (prod.stock <= 0) {
+      return res.status(409).json({ error: 'Prodotto esaurito' });
+    }
 
-    loadUserPage();
-}
+    if (user.crediti < prod.prezzo) {
+      return res.status(409).json({ error: 'Crediti insufficienti' });
+    }
 
-async function loadUserPage() {
-    try {
-        const res = await fetch(`${API_URL}/data`);
-        const data = await safeJson(res);
+    const { error: updateProdError } = await supabase
+      .from('prodotti')
+      .update({ stock: prod.stock - 1 })
+      .eq('id', prodottoId);
 
-        if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
+    if (updateProdError) throw updateProdError;
 
-        const profili = Array.isArray(data.profili) ? data.profili : [];
-        const prodotti = Array.isArray(data.prodotti) ? data.prodotti : [];
+    const { error: updateUserError } = await supabase
+      .from('profilo')
+      .update({ crediti: user.crediti - prod.prezzo })
+      .eq('id', userId);
 
-        const freshUser = profili.find(u => Number(u.id) === Number(currentUser.id));
-        if (!freshUser) {
-            alert("Utente non trovato. Effettua di nuovo il login.");
-            logoutUser();
-            return;
+    if (updateUserError) throw updateUserError;
+
+    return res.json({
+      success: true,
+      message: 'Acquisto completato'
+    });
+  } catch (error) {
+    console.error('Errore /api/buy:', error);
+    return res.status(500).json({
+      error: 'Errore transazione',
+      dettaglio: error.message
+    });
+  }
+});
+
+// =========================
+// ADMIN
+// =========================
+app.post('/api/admin/users', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || 'password123').trim();
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username mancante' });
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({ error: 'Lo username deve avere almeno 3 caratteri' });
+    }
+
+    if (password.length < 6 || !/\d/.test(password)) {
+      return res.status(400).json({ error: 'La password deve avere almeno 6 caratteri e un numero' });
+    }
+
+    const { data: existingUser, error: checkError } = await supabase
+      .from('profilo')
+      .select('id')
+      .ilike('username', username)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username già esistente' });
+    }
+
+    const { data, error } = await supabase
+      .from('profilo')
+      .insert([
+        {
+          username,
+          password,
+          crediti: 1000,
+          role: 'user'
         }
+      ])
+      .select()
+      .single();
 
-        setLoggedUser(freshUser);
+    if (error) throw error;
 
-        const userName = document.getElementById("userName");
-        const userRole = document.getElementById("userRole");
-        const userCredits = document.getElementById("userCredits");
-
-        if (userName) userName.innerText = currentUser.username;
-        if (userRole) userRole.innerText = currentUser.role;
-        if (userCredits) userCredits.innerText = currentUser.crediti;
-
-        renderUserProducts(prodotti);
-    } catch (error) {
-        console.error("Errore loadUserPage:", error);
-        const container = document.getElementById("user-products");
-        if (container) {
-            container.innerHTML = `<div class="error">Errore caricamento catalogo</div>`;
-        }
-    }
-}
-
-function renderUserProducts(prodotti) {
-    const container = document.getElementById("user-products");
-    if (!container) return;
-
-    container.innerHTML = "";
-
-    if (!prodotti.length) {
-        container.innerHTML = `<div class="info">Nessun prodotto presente nel catalogo.</div>`;
-        return;
-    }
-
-    prodotti.forEach(p => {
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const stockClass =
-            p.stock <= 0 ? "stock-out" :
-            p.stock <= 3 ? "stock-low" :
-            "stock-ok";
-
-        card.innerHTML = `
-            <h3>${escapeHtml(p.nome)}</h3>
-            <p>Prezzo: <strong>${p.prezzo}</strong> crediti</p>
-            <p>Stock: <span class="${stockClass}">${p.stock}</span></p>
-            <button class="btn-buy" ${p.stock <= 0 ? "disabled" : ""} data-buy-id="${p.id}">
-                ${p.stock <= 0 ? "Esaurito" : "Acquista"}
-            </button>
-        `;
-
-        container.appendChild(card);
+    res.status(201).json({
+      success: true,
+      message: 'Utente creato con successo',
+      utente: data
     });
-
-    container.querySelectorAll("[data-buy-id]").forEach(btn => {
-        btn.addEventListener("click", () => compra(Number(btn.dataset.buyId)));
+  } catch (error) {
+    console.error('Errore /api/admin/users:', error);
+    res.status(500).json({
+      error: 'Errore creazione utente',
+      dettaglio: error.message
     });
-}
+  }
+});
 
-async function compra(prodottoId) {
-    try {
-        const res = await fetch(`${API_URL}/buy`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                prodottoId,
-                userId: currentUser.id
-            })
-        });
-
-        const data = await safeJson(res);
-
-        if (!res.ok) {
-            alert(data.error || "Errore durante l'acquisto.");
-            return;
-        }
-
-        alert("✅ Acquisto completato.");
-        loadUserPage();
-    } catch (error) {
-        console.error("Errore acquisto:", error);
-        alert("⚠️ Errore di connessione al server.");
-    }
-}
-
-/* ADMIN */
-function initAdminPage() {
-    if (!currentUser) {
-        window.location.href = "index.html";
-        return;
-    }
-
-    if (currentUser.role !== "admin") {
-        window.location.href = "user.html";
-        return;
-    }
-
-    const logoutBtn = document.getElementById("logout-btn");
-    const addProductBtn = document.getElementById("add-product-btn");
-    const createUserBtn = document.getElementById("create-user-btn");
-
-    if (logoutBtn) logoutBtn.addEventListener("click", logoutUser);
-    if (addProductBtn) addProductBtn.addEventListener("click", aggiungiProdotto);
-    if (createUserBtn) createUserBtn.addEventListener("click", creaUtenteDaAdmin);
-
-    const adminName = document.getElementById("adminName");
-    const adminRole = document.getElementById("adminRole");
-    if (adminName) adminName.innerText = currentUser.username;
-    if (adminRole) adminRole.innerText = currentUser.role;
-
-    loadAdminPage();
-}
-
-async function loadAdminPage() {
-    try {
-        const res = await fetch(`${API_URL}/data`);
-        const data = await safeJson(res);
-
-        if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
-
-        const profili = Array.isArray(data.profili) ? data.profili : [];
-        const prodotti = Array.isArray(data.prodotti) ? data.prodotti : [];
-
-        renderListaUtentiAdmin(profili);
-        renderAdminProducts(prodotti);
-    } catch (error) {
-        console.error("Errore loadAdminPage:", error);
-    }
-}
-
-function renderAdminProducts(prodotti) {
-    const container = document.getElementById("admin-products");
-    if (!container) return;
-
-    container.innerHTML = "";
-
-    if (!prodotti.length) {
-        container.innerHTML = `<div class="info">Nessun prodotto presente nel catalogo.</div>`;
-        return;
-    }
-
-    prodotti.forEach(p => {
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const stockClass =
-            p.stock <= 0 ? "stock-out" :
-            p.stock <= 3 ? "stock-low" :
-            "stock-ok";
-
-        card.innerHTML = `
-            <h3>${escapeHtml(p.nome)}</h3>
-            <p>Prezzo: <strong>${p.prezzo}</strong> crediti</p>
-            <p>Stock attuale: <span class="${stockClass}">${p.stock}</span></p>
-            <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
-                <input type="number" id="st-${p.id}" value="${p.stock}" min="0" style="width: 100px;">
-                <button class="btn-save" data-stock-id="${p.id}">Salva Stock</button>
-            </div>
-        `;
-
-        container.appendChild(card);
-    });
-
-    container.querySelectorAll("[data-stock-id]").forEach(btn => {
-        btn.addEventListener("click", () => updateStock(Number(btn.dataset.stockId)));
-    });
-}
-
-function renderListaUtentiAdmin(profili) {
-    const container = document.getElementById("users-list-container");
-    if (!container) return;
-
-    container.innerHTML = "";
-
-    if (!profili.length) {
-        container.innerHTML = `<div class="info">Nessun utente presente nel database.</div>`;
-        return;
-    }
-
-    profili.forEach(u => {
-        const row = document.createElement("div");
-        row.className = "user-row";
-
-        row.innerHTML = `
-            <div>
-                <strong>${escapeHtml(u.username)}</strong>
-                <span>(ID: ${u.id}) - ruolo: ${escapeHtml(u.role || "user")}</span>
-            </div>
-            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                <span>Crediti: <strong style="color:#31e6a8;">${u.crediti}</strong></span>
-                <button class="btn-admin" data-credit-id="${u.id}">Modifica Crediti</button>
-            </div>
-        `;
-
-        container.appendChild(row);
-    });
-
-    container.querySelectorAll("[data-credit-id]").forEach(btn => {
-        btn.addEventListener("click", () => updateCrediti(Number(btn.dataset.creditId)));
-    });
-}
-
-async function updateCrediti(userId) {
-    const valore = prompt("Inserisci il NUOVO saldo totale per questo utente:");
-    if (valore === null || valore.trim() === "") return;
-
-    const credits = Number(valore);
-    if (Number.isNaN(credits) || credits < 0) {
-        alert("Inserisci un numero valido maggiore o uguale a 0");
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_URL}/admin/users/${userId}/credits`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ credits })
-        });
-
-        const data = await safeJson(res);
-
-        if (!res.ok) {
-            alert(data.error || "Errore aggiornamento crediti.");
-            return;
-        }
-
-        alert("✅ Crediti aggiornati");
-        loadAdminPage();
-    } catch (error) {
-        console.error("Errore updateCrediti:", error);
-        alert("⚠️ Errore di connessione al server.");
-    }
-}
-
-async function updateStock(productId) {
-    const input = document.getElementById(`st-${productId}`);
-    if (!input) return alert("Campo stock non trovato");
-
-    const stock = Number(input.value);
-    if (Number.isNaN(stock) || stock < 0) {
-        alert("Stock non valido");
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_URL}/admin/products/${productId}/stock`, {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ stock })
-        });
-
-        const data = await safeJson(res);
-
-        if (!res.ok) {
-            alert(data.error || "Errore aggiornamento stock.");
-            return;
-        }
-
-        alert("✅ Stock aggiornato");
-        loadAdminPage();
-    } catch (error) {
-        console.error("Errore updateStock:", error);
-        alert("⚠️ Errore di connessione al server.");
-    }
-}
-
-async function aggiungiProdotto() {
-    const nomeInput = document.getElementById("add-nome");
-    const prezzoInput = document.getElementById("add-prezzo");
-    const stockInput = document.getElementById("add-stock");
-
-    const nome = nomeInput?.value.trim() || "";
-    const prezzo = Number(prezzoInput?.value);
-    const stock = Number(stockInput?.value);
+app.post('/api/admin/products', async (req, res) => {
+  try {
+    const nome = String(req.body.nome || '').trim();
+    const prezzo = Number(req.body.prezzo);
+    const stock = Number(req.body.stock);
 
     if (!nome || Number.isNaN(prezzo) || Number.isNaN(stock) || prezzo < 0 || stock < 0) {
-        alert("Compila bene tutti i campi del prodotto.");
-        return;
+      return res.status(400).json({ error: 'Dati non validi' });
     }
 
-    try {
-        const res = await fetch(`${API_URL}/admin/products`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ nome, prezzo, stock })
-        });
+    const { data, error } = await supabase
+      .from('prodotti')
+      .insert([{ nome, prezzo, stock }])
+      .select()
+      .single();
 
-        const data = await safeJson(res);
+    if (error) throw error;
 
-        if (!res.ok) {
-            alert(data.error || "Errore creazione prodotto.");
-            return;
-        }
+    res.status(201).json({
+      success: true,
+      message: 'Prodotto creato con successo',
+      prodotto: data
+    });
+  } catch (error) {
+    console.error('Errore /api/admin/products:', error);
+    res.status(500).json({
+      error: 'Errore creazione prodotto',
+      dettaglio: error.message
+    });
+  }
+});
 
-        nomeInput.value = "";
-        prezzoInput.value = "";
-        stockInput.value = "";
+app.patch('/api/admin/products/:id/stock', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const stock = Number(req.body.stock);
 
-        alert("📦 Prodotto creato con successo");
-        loadAdminPage();
-    } catch (error) {
-        console.error("Errore aggiungiProdotto:", error);
-        alert("⚠️ Errore di connessione al server.");
-    }
-}
-
-async function creaUtenteDaAdmin() {
-    const usernameInput = document.getElementById("new-username");
-    const passwordInput = document.getElementById("new-password");
-
-    const username = usernameInput?.value.trim() || "";
-    const password = passwordInput?.value.trim() || "";
-
-    if (username.length < 3) {
-        alert("Lo username deve avere almeno 3 caratteri.");
-        return;
+    if (Number.isNaN(stock) || stock < 0) {
+      return res.status(400).json({ error: 'Stock negativo non ammesso' });
     }
 
-    if (!isValidPassword(password)) {
-        alert("La password deve avere almeno 6 caratteri e almeno un numero.");
-        return;
+    const { data, error } = await supabase
+      .from('prodotti')
+      .update({ stock })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, prodotto: data });
+  } catch (error) {
+    console.error('Errore stock:', error);
+    res.status(500).json({ error: 'Errore update stock', dettaglio: error.message });
+  }
+});
+
+app.patch('/api/admin/products/:id/price', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const prezzo = Number(req.body.prezzo);
+
+    if (Number.isNaN(prezzo) || prezzo < 0) {
+      return res.status(400).json({ error: 'Prezzo non valido' });
     }
 
-    try {
-        const res = await fetch(`${API_URL}/admin/users`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ username, password })
-        });
+    const { data, error } = await supabase
+      .from('prodotti')
+      .update({ prezzo })
+      .eq('id', id)
+      .select()
+      .single();
 
-        const data = await safeJson(res);
+    if (error) throw error;
 
-        if (!res.ok) {
-            alert(data.error || "Errore creazione utente.");
-            return;
-        }
+    res.json({ success: true, prodotto: data });
+  } catch (error) {
+    console.error('Errore prezzo:', error);
+    res.status(500).json({ error: 'Errore update prezzo', dettaglio: error.message });
+  }
+});
 
-        usernameInput.value = "";
-        passwordInput.value = "";
+app.delete('/api/admin/products/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
 
-        alert("✨ Utente creato con successo");
-        loadAdminPage();
-    } catch (error) {
-        console.error("Errore creaUtenteDaAdmin:", error);
-        alert("⚠️ Errore di connessione al server.");
+    const { error } = await supabase
+      .from('prodotti')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Prodotto eliminato con successo' });
+  } catch (error) {
+    console.error('Errore delete product:', error);
+    res.status(500).json({ error: 'Errore eliminazione prodotto', dettaglio: error.message });
+  }
+});
+
+app.patch('/api/admin/users/:id/credits', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const credits = Number(req.body.credits);
+
+    if (Number.isNaN(credits) || credits < 0) {
+      return res.status(400).json({ error: 'Crediti negativi non ammessi' });
     }
-}
 
-/* LOGOUT */
-function logoutUser() {
-    clearLoggedUser();
-    window.location.href = "index.html";
-}
+    const { data, error } = await supabase
+      .from('profilo')
+      .update({ crediti: credits })
+      .eq('id', id)
+      .select()
+      .single();
 
-/* UTILS */
-function showMessage(element, text, type = "") {
-    if (!element) return;
-    element.className = "message-box";
-    if (type) element.classList.add(type);
-    element.innerHTML = text;
-}
+    if (error) throw error;
 
-function clearMessage(element) {
-    if (!element) return;
-    element.className = "message-box";
-    element.innerHTML = "";
-}
+    res.json({ success: true, profilo: data });
+  } catch (error) {
+    console.error('Errore credits:', error);
+    res.status(500).json({ error: 'Errore update crediti', dettaglio: error.message });
+  }
+});
 
-async function safeJson(res) {
-    try {
-        return await res.json();
-    } catch {
-        return {};
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const { data: user, error: findError } = await supabase
+      .from('profilo')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !user) {
+      return res.status(404).json({ error: 'Utente non trovato' });
     }
-}
 
-function escapeHtml(value) {
-    return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-}
+    if (user.role === 'admin') {
+      return res.status(403).json({ error: 'Non puoi eliminare un admin' });
+    }
+
+    const { error } = await supabase
+      .from('profilo')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'Utente eliminato con successo' });
+  } catch (error) {
+    console.error('Errore delete user:', error);
+    res.status(500).json({ error: 'Errore eliminazione utente', dettaglio: error.message });
+  }
+});
+
+// =========================
+// FALLBACK
+// =========================
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Rotta API non trovata' });
+  }
+
+  return res.status(404).send('Pagina non trovata');
+});
+
+// =========================
+// START SERVER
+// =========================
+app.listen(PORT, () => {
+  console.log(`Server acceso sulla porta ${PORT}`);
+});
