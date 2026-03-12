@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyShop - Login</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+
+  <div class="auth-layout">
+    <div class="auth-hero">
+      <div class="hero-badge">MyShop Platform</div>
+      <h1>Benvenuto su MyShop</h1>
+      <p>
+        Accedi alla piattaforma per acquistare prodotti oppure,
+        se sei amministratore, per gestire utenti e catalogo.
+      </p>
+
+      <div class="hero-card">
+        <h3>Accesso rapido</h3>
+        <p>Se hai già un account, entra subito nella piattaforma.</p>
+        <button class="btn-primary big-btn" onclick="document.getElementById('login-box').scrollIntoView({behavior:'smooth'})">
+          Accedi Ora
+        </button>
+      </div>
+    </div>
+
+    <div class="auth-panel" id="login-box">
+      <h2>Login</h2>
+      <p class="auth-subtitle">Inserisci le tue credenziali</p>
+
+      <div id="login-message" class="message-box"></div>
+
+      <div class="form-group">
+        <label for="login-username">Username</label>
+        <input type="text" id="login-username" placeholder="Inserisci username">
+      </div>
+
+      <div class="form-group">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" placeholder="Inserisci password">
+      </div>
+
+      <button class="btn-primary auth-btn" onclick="loginUser()">
+        Accedi
+      </button>
+
+      <div class="auth-links">
+        <p>Non hai un account?</p>
+        <a href="register.html" class="btn-secondary">Vai alla registrazione</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "https://prova-v.onrender.com/api";
+
+    async function loginUser() {
+      const username = document.getElementById("login-username").value.trim();
+      const password = document.getElementById("login-password").value.trim();
+      const messageBox = document.getElementById("login-message");
+
+      messageBox.className = "message-box";
+      messageBox.innerHTML = "";
+
+      if (!username || !password) {
+        messageBox.className = "message-box error";
+        messageBox.innerHTML = "Inserisci username e password.";
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          messageBox.className = "message-box error";
+          messageBox.innerHTML = data.error || "Credenziali non valide.";
+          return;
+        }
+
+        localStorage.setItem("loggedUser", JSON.stringify(data.user));
+
+        if (data.user.role === "admin") {
+          window.location.href = "admin.html";
+        } else {
+          window.location.href = "user.html";
+        }
+      } catch (error) {
+        messageBox.className = "message-box error";
+        messageBox.innerHTML = "Errore di connessione al server.";
+      }
+    }
+  </script>
+</body>
+</html>
