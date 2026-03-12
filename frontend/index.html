@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Commerce TPSI - Multi User</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container nav-flex">
+            <span class="logo">🛒 MyShop</span>
+            <div>
+                <button onclick="switchView('user')" class="btn-nav" id="btn-user">Vista Utente</button>
+                <button onclick="switchView('admin')" class="btn-nav" id="btn-admin">Vista Admin</button>
+            </div>
+        </div>
+    </nav>
+
+    <header class="user-bar">
+        <div class="container bar-flex">
+            <div class="user-info">
+                <p>👤 <span id="userName">Caricamento...</span></p>
+                <select id="userSelector" onchange="cambiaUtente(this.value)" style="margin-left: 10px; padding: 2px; border-radius: 4px;">
+                    </select>
+            </div>
+            <p>💰 Saldo: <span id="userCredits" class="credits">0</span> crediti</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <div id="admin-add-product" style="display: none; background: #f4f4f4; padding: 20px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ddd;">
+            <h3>➕ Aggiungi Nuovo Prodotto</h3>
+            <div class="input-group">
+                <input type="text" id="add-nome" placeholder="Nome Prodotto">
+                <input type="number" id="add-prezzo" placeholder="Prezzo">
+                <input type="number" id="add-stock" placeholder="Stock iniziale">
+                <button onclick="aggiungiProdotto()" class="btn-admin">Crea Prodotto</button>
+            </div>
+        </div>
+
+        <div id="admin-manage-users" style="display: none; background: #eef2ff; padding: 20px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ccd;">
+            <h3>👥 Gestione Utenti</h3>
+            <div class="input-group">
+                <input type="text" id="new-username" placeholder="Nome Nuovo Utente">
+                <button onclick="creaUtente()" class="btn-admin">Registra Utente</button>
+            </div>
+            <div id="users-list-container" style="margin-top: 15px;">
+                </div>
+        </div>
+
+        <div id="app" class="grid-container"></div>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
