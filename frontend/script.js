@@ -1,6 +1,9 @@
 const API_URL = "https://prova-v.onrender.com/api";
 let currentUser = getLoggedUser();
 
+// =========================
+// AVVIO PAGINA
+// =========================
 document.addEventListener("DOMContentLoaded", () => {
     const page = getCurrentPage();
 
@@ -10,6 +13,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (page === "admin") initAdminPage();
 });
 
+// =========================
+// PAGINE
+// =========================
 function getCurrentPage() {
     const path = window.location.pathname.toLowerCase();
 
@@ -20,6 +26,9 @@ function getCurrentPage() {
     return "login";
 }
 
+// =========================
+// STORAGE USER
+// =========================
 function getLoggedUser() {
     try {
         return JSON.parse(localStorage.getItem("loggedUser"));
@@ -38,7 +47,9 @@ function clearLoggedUser() {
     localStorage.removeItem("loggedUser");
 }
 
-/* LOGIN */
+// =========================
+// LOGIN PAGE
+// =========================
 function initLoginPage() {
     if (currentUser && currentUser.role === "admin") {
         window.location.href = "admin.html";
@@ -105,7 +116,9 @@ async function loginUser() {
     }
 }
 
-/* REGISTER */
+// =========================
+// REGISTER PAGE
+// =========================
 function initRegisterPage() {
     const btn = document.getElementById("register-submit");
     const usernameInput = document.getElementById("register-username");
@@ -161,7 +174,11 @@ async function registerUser() {
             return;
         }
 
-        showMessage(messageBox, "Registrazione completata. Verrai reindirizzato al login...", "success");
+        showMessage(
+            messageBox,
+            "Registrazione completata. Verrai reindirizzato al login...",
+            "success"
+        );
 
         setTimeout(() => {
             window.location.href = "index.html";
@@ -176,7 +193,9 @@ function isValidPassword(password) {
     return password.length >= 6 && /\d/.test(password);
 }
 
-/* USER */
+// =========================
+// USER PAGE
+// =========================
 function initUserPage() {
     if (!currentUser) {
         window.location.href = "index.html";
@@ -199,12 +218,15 @@ async function loadUserPage() {
         const res = await fetch(`${API_URL}/data`);
         const data = await safeJson(res);
 
-        if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
+        if (!res.ok) {
+            throw new Error(data.error || "Errore caricamento dati");
+        }
 
         const profili = Array.isArray(data.profili) ? data.profili : [];
         const prodotti = Array.isArray(data.prodotti) ? data.prodotti : [];
 
         const freshUser = profili.find(u => Number(u.id) === Number(currentUser.id));
+
         if (!freshUser) {
             alert("Utente non trovato. Effettua di nuovo il login.");
             logoutUser();
@@ -212,23 +234,30 @@ async function loadUserPage() {
         }
 
         setLoggedUser(freshUser);
-
-        const userName = document.getElementById("userName");
-        const userRole = document.getElementById("userRole");
-        const userCredits = document.getElementById("userCredits");
-
-        if (userName) userName.innerText = currentUser.username;
-        if (userRole) userRole.innerText = currentUser.role;
-        if (userCredits) userCredits.innerText = currentUser.crediti;
-
+        renderUserHeader();
         renderUserProducts(prodotti);
     } catch (error) {
         console.error("Errore loadUserPage:", error);
         const container = document.getElementById("user-products");
         if (container) {
-            container.innerHTML = `<div class="error">Errore caricamento catalogo</div>`;
+            container.innerHTML = `
+                <div class="error">
+                    <h3>Errore caricamento catalogo</h3>
+                    <p>${escapeHtml(error.message)}</p>
+                </div>
+            `;
         }
     }
+}
+
+function renderUserHeader() {
+    const userName = document.getElementById("userName");
+    const userRole = document.getElementById("userRole");
+    const userCredits = document.getElementById("userCredits");
+
+    if (userName) userName.innerText = currentUser.username;
+    if (userRole) userRole.innerText = currentUser.role;
+    if (userCredits) userCredits.innerText = currentUser.crediti;
 }
 
 function renderUserProducts(prodotti) {
@@ -296,7 +325,9 @@ async function compra(prodottoId) {
     }
 }
 
-/* ADMIN */
+// =========================
+// ADMIN PAGE
+// =========================
 function initAdminPage() {
     if (!currentUser) {
         window.location.href = "index.html";
@@ -316,12 +347,16 @@ function initAdminPage() {
     if (addProductBtn) addProductBtn.addEventListener("click", aggiungiProdotto);
     if (createUserBtn) createUserBtn.addEventListener("click", creaUtenteDaAdmin);
 
+    renderAdminHeader();
+    loadAdminPage();
+}
+
+function renderAdminHeader() {
     const adminName = document.getElementById("adminName");
     const adminRole = document.getElementById("adminRole");
+
     if (adminName) adminName.innerText = currentUser.username;
     if (adminRole) adminRole.innerText = currentUser.role;
-
-    loadAdminPage();
 }
 
 async function loadAdminPage() {
@@ -329,7 +364,9 @@ async function loadAdminPage() {
         const res = await fetch(`${API_URL}/data`);
         const data = await safeJson(res);
 
-        if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
+        if (!res.ok) {
+            throw new Error(data.error || "Errore caricamento dati");
+        }
 
         const profili = Array.isArray(data.profili) ? data.profili : [];
         const prodotti = Array.isArray(data.prodotti) ? data.prodotti : [];
@@ -338,6 +375,25 @@ async function loadAdminPage() {
         renderAdminProducts(prodotti);
     } catch (error) {
         console.error("Errore loadAdminPage:", error);
+
+        const usersContainer = document.getElementById("users-list-container");
+        const productsContainer = document.getElementById("admin-products");
+
+        if (usersContainer) {
+            usersContainer.innerHTML = `
+                <div class="error">
+                    <p>Errore caricamento utenti: ${escapeHtml(error.message)}</p>
+                </div>
+            `;
+        }
+
+        if (productsContainer) {
+            productsContainer.innerHTML = `
+                <div class="error">
+                    <p>Errore caricamento prodotti: ${escapeHtml(error.message)}</p>
+                </div>
+            `;
+        }
     }
 }
 
@@ -363,11 +419,21 @@ function renderAdminProducts(prodotti) {
 
         card.innerHTML = `
             <h3>${escapeHtml(p.nome)}</h3>
-            <p>Prezzo: <strong>${p.prezzo}</strong> crediti</p>
+            <p>Prezzo attuale: <strong>${p.prezzo}</strong> crediti</p>
             <p>Stock attuale: <span class="${stockClass}">${p.stock}</span></p>
+
             <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
                 <input type="number" id="st-${p.id}" value="${p.stock}" min="0" style="width: 100px;">
                 <button class="btn-save" data-stock-id="${p.id}">Salva Stock</button>
+            </div>
+
+            <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
+                <input type="number" id="pr-${p.id}" value="${p.prezzo}" min="0" style="width: 100px;">
+                <button class="btn-admin" data-price-id="${p.id}">Salva Prezzo</button>
+            </div>
+
+            <div style="margin-top:14px;">
+                <button class="btn-danger" data-delete-product-id="${p.id}">Elimina Prodotto</button>
             </div>
         `;
 
@@ -376,6 +442,14 @@ function renderAdminProducts(prodotti) {
 
     container.querySelectorAll("[data-stock-id]").forEach(btn => {
         btn.addEventListener("click", () => updateStock(Number(btn.dataset.stockId)));
+    });
+
+    container.querySelectorAll("[data-price-id]").forEach(btn => {
+        btn.addEventListener("click", () => updatePrezzo(Number(btn.dataset.priceId)));
+    });
+
+    container.querySelectorAll("[data-delete-product-id]").forEach(btn => {
+        btn.addEventListener("click", () => deleteProduct(Number(btn.dataset.deleteProductId)));
     });
 }
 
@@ -391,6 +465,8 @@ function renderListaUtentiAdmin(profili) {
     }
 
     profili.forEach(u => {
+        const isAdminUser = u.role === "admin";
+
         const row = document.createElement("div");
         row.className = "user-row";
 
@@ -402,6 +478,7 @@ function renderListaUtentiAdmin(profili) {
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                 <span>Crediti: <strong style="color:#31e6a8;">${u.crediti}</strong></span>
                 <button class="btn-admin" data-credit-id="${u.id}">Modifica Crediti</button>
+                ${isAdminUser ? "" : `<button class="btn-danger" data-delete-user-id="${u.id}">Elimina Utente</button>`}
             </div>
         `;
 
@@ -410,6 +487,10 @@ function renderListaUtentiAdmin(profili) {
 
     container.querySelectorAll("[data-credit-id]").forEach(btn => {
         btn.addEventListener("click", () => updateCrediti(Number(btn.dataset.creditId)));
+    });
+
+    container.querySelectorAll("[data-delete-user-id]").forEach(btn => {
+        btn.addEventListener("click", () => deleteUser(Number(btn.dataset.deleteUserId)));
     });
 }
 
@@ -449,7 +530,10 @@ async function updateCrediti(userId) {
 
 async function updateStock(productId) {
     const input = document.getElementById(`st-${productId}`);
-    if (!input) return alert("Campo stock non trovato");
+    if (!input) {
+        alert("Campo stock non trovato");
+        return;
+    }
 
     const stock = Number(input.value);
     if (Number.isNaN(stock) || stock < 0) {
@@ -481,14 +565,101 @@ async function updateStock(productId) {
     }
 }
 
+async function updatePrezzo(productId) {
+    const input = document.getElementById(`pr-${productId}`);
+    if (!input) {
+        alert("Campo prezzo non trovato");
+        return;
+    }
+
+    const prezzo = Number(input.value);
+    if (Number.isNaN(prezzo) || prezzo < 0) {
+        alert("Prezzo non valido");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/admin/products/${productId}/price`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ prezzo })
+        });
+
+        const data = await safeJson(res);
+
+        if (!res.ok) {
+            alert(data.error || "Errore aggiornamento prezzo.");
+            return;
+        }
+
+        alert("✅ Prezzo aggiornato");
+        loadAdminPage();
+    } catch (error) {
+        console.error("Errore updatePrezzo:", error);
+        alert("⚠️ Errore di connessione al server.");
+    }
+}
+
+async function deleteProduct(productId) {
+    const conferma = confirm("Vuoi davvero eliminare questo prodotto?");
+    if (!conferma) return;
+
+    try {
+        const res = await fetch(`${API_URL}/admin/products/${productId}`, {
+            method: "DELETE"
+        });
+
+        const data = await safeJson(res);
+
+        if (!res.ok) {
+            alert(data.error || "Errore eliminazione prodotto.");
+            return;
+        }
+
+        alert("🗑️ Prodotto eliminato con successo");
+        loadAdminPage();
+    } catch (error) {
+        console.error("Errore deleteProduct:", error);
+        alert("⚠️ Errore di connessione al server.");
+    }
+}
+
+async function deleteUser(userId) {
+    const conferma = confirm("Vuoi davvero eliminare questo utente?");
+    if (!conferma) return;
+
+    try {
+        const res = await fetch(`${API_URL}/admin/users/${userId}`, {
+            method: "DELETE"
+        });
+
+        const data = await safeJson(res);
+
+        if (!res.ok) {
+            alert(data.error || "Errore eliminazione utente.");
+            return;
+        }
+
+        alert("🗑️ Utente eliminato con successo");
+        loadAdminPage();
+    } catch (error) {
+        console.error("Errore deleteUser:", error);
+        alert("⚠️ Errore di connessione al server.");
+    }
+}
+
 async function aggiungiProdotto() {
     const nomeInput = document.getElementById("add-nome");
     const prezzoInput = document.getElementById("add-prezzo");
     const stockInput = document.getElementById("add-stock");
 
-    const nome = nomeInput?.value.trim() || "";
-    const prezzo = Number(prezzoInput?.value);
-    const stock = Number(stockInput?.value);
+    if (!nomeInput || !prezzoInput || !stockInput) return;
+
+    const nome = nomeInput.value.trim();
+    const prezzo = Number(prezzoInput.value);
+    const stock = Number(stockInput.value);
 
     if (!nome || Number.isNaN(prezzo) || Number.isNaN(stock) || prezzo < 0 || stock < 0) {
         alert("Compila bene tutti i campi del prodotto.");
@@ -527,8 +698,10 @@ async function creaUtenteDaAdmin() {
     const usernameInput = document.getElementById("new-username");
     const passwordInput = document.getElementById("new-password");
 
-    const username = usernameInput?.value.trim() || "";
-    const password = passwordInput?.value.trim() || "";
+    if (!usernameInput || !passwordInput) return;
+
+    const username = usernameInput.value.trim();
+    const password = passwordInput.value.trim();
 
     if (username.length < 3) {
         alert("Lo username deve avere almeno 3 caratteri.");
@@ -567,13 +740,17 @@ async function creaUtenteDaAdmin() {
     }
 }
 
-/* LOGOUT */
+// =========================
+// LOGOUT
+// =========================
 function logoutUser() {
     clearLoggedUser();
     window.location.href = "index.html";
 }
 
-/* UTILS */
+// =========================
+// UTILS
+// =========================
 function showMessage(element, text, type = "") {
     if (!element) return;
     element.className = "message-box";
