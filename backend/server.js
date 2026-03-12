@@ -22,8 +22,6 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // Middleware
 app.use(cors({ origin: '*' }));
 app.use(express.json());
-
-// Serve file statici dalla cartella corrente
 app.use(express.static(path.join(__dirname)));
 
 // Root: mostra index.html
@@ -135,17 +133,31 @@ app.post('/api/buy', async (req, res) => {
 // POST: crea nuovo utente
 app.post('/api/admin/users', async (req, res) => {
   try {
-    const { username } = req.body;
+    const rawUsername = req.body.username;
+    const username = String(rawUsername || '').trim();
 
-    if (!username || !username.trim()) {
+    if (!username) {
       return res.status(400).json({ error: 'Username mancante' });
+    }
+
+    // Controllo se esiste già
+    const { data: existingUser, error: checkError } = await supabase
+      .from('profilo')
+      .select('id, username')
+      .ilike('username', username)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username già esistente' });
     }
 
     const { data, error } = await supabase
       .from('profilo')
       .insert([
         {
-          username: username.trim(),
+          username,
           password: 'password123',
           crediti: 1000
         }
@@ -155,9 +167,18 @@ app.post('/api/admin/users', async (req, res) => {
 
     if (error) throw error;
 
-    res.status(201).json(data);
+    res.status(201).json({
+      success: true,
+      message: 'Utente creato con successo',
+      utente: data
+    });
   } catch (error) {
     console.error('Errore /api/admin/users:', error);
+
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Username già esistente' });
+    }
+
     res.status(500).json({
       error: 'Errore creazione utente',
       dettaglio: error.message
@@ -168,9 +189,11 @@ app.post('/api/admin/users', async (req, res) => {
 // POST: admin aggiunge prodotto
 app.post('/api/admin/products', async (req, res) => {
   try {
-    const { nome, prezzo, stock } = req.body;
+    const nome = String(req.body.nome || '').trim();
+    const prezzo = Number(req.body.prezzo);
+    const stock = Number(req.body.stock);
 
-    if (!nome || prezzo < 0 || stock < 0) {
+    if (!nome || Number.isNaN(prezzo) || Number.isNaN(stock) || prezzo < 0 || stock < 0) {
       return res.status(400).json({ error: 'Dati non validi' });
     }
 
@@ -182,7 +205,11 @@ app.post('/api/admin/products', async (req, res) => {
 
     if (error) throw error;
 
-    res.status(201).json(data);
+    res.status(201).json({
+      success: true,
+      message: 'Prodotto creato con successo',
+      prodotto: data
+    });
   } catch (error) {
     console.error('Errore /api/admin/products:', error);
     res.status(500).json({
@@ -196,9 +223,9 @@ app.post('/api/admin/products', async (req, res) => {
 app.patch('/api/admin/products/:id/stock', async (req, res) => {
   try {
     const id = req.params.id;
-    const { stock } = req.body;
+    const stock = Number(req.body.stock);
 
-    if (stock < 0) {
+    if (Number.isNaN(stock) || stock < 0) {
       return res.status(400).json({ error: 'Stock negativo non ammesso' });
     }
 
@@ -228,9 +255,9 @@ app.patch('/api/admin/products/:id/stock', async (req, res) => {
 app.patch('/api/admin/users/:id/credits', async (req, res) => {
   try {
     const id = req.params.id;
-    const { credits } = req.body;
+    const credits = Number(req.body.credits);
 
-    if (credits < 0) {
+    if (Number.isNaN(credits) || credits < 0) {
       return res.status(400).json({ error: 'Crediti negativi non ammessi' });
     }
 
@@ -256,9 +283,13 @@ app.patch('/api/admin/users/:id/credits', async (req, res) => {
   }
 });
 
-// Fallback opzionale per file non trovati
+// Fallback API/file non trovati
 app.use((req, res) => {
-  res.status(404).json({ error: 'Rotta non trovata' });
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Rotta API non trovata' });
+  }
+
+  return res.status(404).send('Pagina non trovata');
 });
 
 app.listen(PORT, () => {

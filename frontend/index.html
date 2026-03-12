@@ -11,7 +11,7 @@
         <div class="container nav-flex">
             <span class="logo">🛒 MyShop</span>
 
-            <div class="input-group nav-actions">
+            <div class="nav-actions">
                 <button onclick="switchView('user')" class="btn-nav" id="btn-user">
                     Vista Utente
                 </button>
@@ -40,7 +40,7 @@
     </header>
 
     <main class="container">
-        <section id="admin-add-product" class="admin-panel hidden">
+        <div id="admin-add-product" class="admin-panel" style="display: none;">
             <h3 class="section-title">➕ Aggiungi Nuovo Prodotto</h3>
             <p class="section-subtitle">
                 Crea un nuovo prodotto da aggiungere al catalogo.
@@ -54,12 +54,12 @@
                     Crea Prodotto
                 </button>
             </div>
-        </section>
+        </div>
 
-        <section id="admin-manage-users" class="admin-panel hidden">
+        <div id="admin-manage-users" class="admin-panel" style="display: none;">
             <h3 class="section-title">👥 Gestione Utenti</h3>
             <p class="section-subtitle">
-                Registra nuovi utenti e controlla quelli esistenti.
+                Registra nuovi utenti e modifica crediti e dati utenti.
             </p>
 
             <div class="input-group">
@@ -69,8 +69,9 @@
                 </button>
             </div>
 
-            <div id="users-list-container" class="mt-2"></div>
-        </section>
+            <div id="users-list-container" class="users-list-container" style="margin-top: 15px;">
+            </div>
+        </div>
 
         <section class="section-card">
             <h2 class="page-title">Catalogo Prodotti</h2>
