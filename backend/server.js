@@ -295,3 +295,125 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`Server acceso sulla porta ${PORT}`);
 });
+
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '').trim();
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username e password obbligatori' });
+    }
+
+    const { data: user, error } = await supabase
+      .from('profilo')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password)
+      .single();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Credenziali non valide' });
+    }
+
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        username: user.username,
+        crediti: user.crediti,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Errore /api/auth/login:', error);
+    return res.status(500).json({
+      error: 'Errore login',
+      dettaglio: error.message
+    });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '').trim();
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username e password obbligatori' });
+    }
+
+    const { data: existingUser, error: checkError } = await supabase
+      .from('profilo')
+      .select('id')
+      .ilike('username', username)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (existingUser) {
+      return res.status(409).json({ error: 'Username già esistente' });
+    }
+
+    const { data, error } = await supabase
+      .from('profilo')
+      .insert([{
+        username,
+        password,
+        crediti: 1000,
+        role: 'user'
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return res.status(201).json({
+      success: true,
+      user: {
+        id: data.id,
+        username: data.username,
+        crediti: data.crediti,
+        role: data.role
+      }
+    });
+  } catch (error) {
+    console.error('Errore /api/auth/register:', error);
+    return res.status(500).json({
+      error: 'Errore registrazione',
+      dettaglio: error.message
+    });
+  }
+});
+
+app.patch('/api/admin/users/:id/credits', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const credits = Number(req.body.credits);
+
+    if (Number.isNaN(credits) || credits < 0) {
+      return res.status(400).json({ error: 'Crediti negativi non ammessi' });
+    }
+
+    const { data, error } = await supabase
+      .from('profilo')
+      .update({ crediti: credits })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      profilo: data
+    });
+  } catch (error) {
+    console.error('Errore /api/admin/users/:id/credits:', error);
+    res.status(500).json({
+      error: 'Errore update crediti',
+      dettaglio: error.message
+    });
+  }
+});
