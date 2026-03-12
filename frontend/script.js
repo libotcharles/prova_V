@@ -1,4 +1,4 @@
-const API_URL = "https://compito-f5ex.onrender.com/api"; // Verificare che sia corretto
+const API_URL = "https://prova-v.onrender.com/api"; // Verificare che sia corretto
 let isAdmin = false;
 let currentUserId = 1; // Default iniziale
 
