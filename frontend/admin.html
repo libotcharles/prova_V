@@ -11,15 +11,19 @@
   <nav class="navbar">
     <div class="container nav-flex">
       <span class="logo">🛠 Admin Panel</span>
-      <button class="btn-secondary" onclick="logoutUser()">Logout</button>
+      <button id="logout-btn" class="btn-secondary" type="button">Logout</button>
     </div>
   </nav>
 
   <header class="user-bar">
     <div class="container bar-flex">
       <div class="user-info">
-        <div class="user-chip">👤 <span id="adminName">Admin</span></div>
-        <div class="role-badge">Ruolo: <span id="adminRole">admin</span></div>
+        <div class="user-chip">
+          👤 <span id="adminName">Admin</span>
+        </div>
+        <div class="role-badge">
+          Ruolo: <span id="adminRole">admin</span>
+        </div>
       </div>
     </div>
   </header>
@@ -27,261 +31,54 @@
   <main class="container">
     <section class="admin-panel">
       <h3 class="section-title">➕ Aggiungi Nuovo Prodotto</h3>
+      <p class="section-subtitle">
+        Inserisci un nuovo prodotto nel catalogo.
+      </p>
+
       <div class="input-group">
         <input type="text" id="add-nome" placeholder="Nome Prodotto">
         <input type="number" id="add-prezzo" placeholder="Prezzo">
         <input type="number" id="add-stock" placeholder="Stock iniziale">
-        <button class="btn-admin" onclick="addProduct()">Crea Prodotto</button>
+        <button id="add-product-btn" class="btn-admin" type="button">
+          Crea Prodotto
+        </button>
       </div>
     </section>
 
     <section class="admin-panel">
       <h3 class="section-title">👤 Crea Nuovo Utente</h3>
+      <p class="section-subtitle">
+        Registra manualmente un nuovo utente dal pannello admin.
+      </p>
+
       <div class="input-group">
         <input type="text" id="new-username" placeholder="Username nuovo utente">
         <input type="password" id="new-password" placeholder="Password nuovo utente">
-        <button class="btn-admin" onclick="createUserByAdmin()">Crea Utente</button>
+        <button id="create-user-btn" class="btn-admin" type="button">
+          Crea Utente
+        </button>
       </div>
     </section>
 
     <section class="admin-panel">
       <h3 class="section-title">👥 Gestione Utenti</h3>
+      <p class="section-subtitle">
+        Qui puoi modificare i crediti degli utenti registrati.
+      </p>
+
       <div id="users-list-container"></div>
     </section>
 
     <section class="section-card">
       <h2 class="page-title">Gestione Catalogo</h2>
+      <p class="section-subtitle">
+        Qui puoi modificare lo stock dei prodotti esistenti.
+      </p>
+
       <div id="admin-products" class="grid-container"></div>
     </section>
   </main>
 
-  <script>
-    const API_URL = "https://prova-v.onrender.com/api";
-    let currentUser = JSON.parse(localStorage.getItem("loggedUser"));
-
-    if (!currentUser) {
-      window.location.href = "login.html";
-    }
-
-    if (currentUser && currentUser.role !== "admin") {
-      window.location.href = "user.html";
-    }
-
-    async function loadAdminPage() {
-      try {
-        const res = await fetch(`${API_URL}/data`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert("Errore caricamento dati.");
-          return;
-        }
-
-        const profili = data.profili || [];
-        const prodotti = data.prodotti || [];
-
-        document.getElementById("adminName").innerText = currentUser.username;
-        document.getElementById("adminRole").innerText = currentUser.role;
-
-        renderUsers(profili);
-        renderProducts(prodotti);
-      } catch (error) {
-        alert("Errore di connessione.");
-      }
-    }
-
-    function renderUsers(profili) {
-      const container = document.getElementById("users-list-container");
-      container.innerHTML = "";
-
-      profili.forEach(u => {
-        const row = document.createElement("div");
-        row.className = "user-row";
-
-        row.innerHTML = `
-          <div>
-            <strong>${escapeHtml(u.username)}</strong>
-            <span>(ID: ${u.id}) - ruolo: ${u.role}</span>
-          </div>
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <span>Crediti: <strong>${u.crediti}</strong></span>
-            <button class="btn-admin" onclick="changeCredits(${u.id})">Modifica Crediti</button>
-          </div>
-        `;
-
-        container.appendChild(row);
-      });
-    }
-
-    function renderProducts(prodotti) {
-      const container = document.getElementById("admin-products");
-      container.innerHTML = "";
-
-      prodotti.forEach(p => {
-        const card = document.createElement("div");
-        card.className = "card";
-
-        card.innerHTML = `
-          <h3>${escapeHtml(p.nome)}</h3>
-          <p>Prezzo: <strong>${p.prezzo}</strong></p>
-          <p>Stock attuale: <strong>${p.stock}</strong></p>
-          <div class="input-group" style="margin-top: 12px;">
-            <input type="number" id="stock-${p.id}" value="${p.stock}" min="0">
-            <button class="btn-save" onclick="updateStock(${p.id})">Salva Stock</button>
-          </div>
-        `;
-
-        container.appendChild(card);
-      });
-    }
-
-    async function changeCredits(userId) {
-      const value = prompt("Inserisci il nuovo totale crediti:");
-      if (value === null || value.trim() === "") return;
-
-      const credits = Number(value);
-      if (isNaN(credits) || credits < 0) {
-        alert("Inserisci un numero valido.");
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_URL}/admin/users/${userId}/credits`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ credits })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || "Errore modifica crediti.");
-          return;
-        }
-
-        alert("Crediti aggiornati.");
-        loadAdminPage();
-      } catch (error) {
-        alert("Errore di connessione.");
-      }
-    }
-
-    async function updateStock(productId) {
-      const input = document.getElementById(`stock-${productId}`);
-      const stock = Number(input.value);
-
-      if (isNaN(stock) || stock < 0) {
-        alert("Stock non valido.");
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_URL}/admin/products/${productId}/stock`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stock })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || "Errore aggiornamento stock.");
-          return;
-        }
-
-        alert("Stock aggiornato.");
-        loadAdminPage();
-      } catch (error) {
-        alert("Errore di connessione.");
-      }
-    }
-
-    async function addProduct() {
-      const nome = document.getElementById("add-nome").value.trim();
-      const prezzo = Number(document.getElementById("add-prezzo").value);
-      const stock = Number(document.getElementById("add-stock").value);
-
-      if (!nome || isNaN(prezzo) || isNaN(stock) || prezzo < 0 || stock < 0) {
-        alert("Dati prodotto non validi.");
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_URL}/admin/products`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nome, prezzo, stock })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || "Errore creazione prodotto.");
-          return;
-        }
-
-        alert("Prodotto creato.");
-        document.getElementById("add-nome").value = "";
-        document.getElementById("add-prezzo").value = "";
-        document.getElementById("add-stock").value = "";
-        loadAdminPage();
-      } catch (error) {
-        alert("Errore di connessione.");
-      }
-    }
-
-    async function createUserByAdmin() {
-      const username = document.getElementById("new-username").value.trim();
-      const password = document.getElementById("new-password").value.trim();
-
-      if (username.length < 3) {
-        alert("Username troppo corto.");
-        return;
-      }
-
-      if (password.length < 6 || !/\d/.test(password)) {
-        alert("La password deve avere almeno 6 caratteri e almeno un numero.");
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_URL}/auth/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || "Errore creazione utente.");
-          return;
-        }
-
-        alert("Utente creato con successo.");
-        document.getElementById("new-username").value = "";
-        document.getElementById("new-password").value = "";
-        loadAdminPage();
-      } catch (error) {
-        alert("Errore di connessione.");
-      }
-    }
-
-    function logoutUser() {
-      localStorage.removeItem("loggedUser");
-      window.location.href = "login.html";
-    }
-
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    loadAdminPage();
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>

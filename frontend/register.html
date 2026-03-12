@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MyShop - Registrazione</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+
+  <div class="auth-layout single-center">
+    <div class="auth-panel register-panel">
+      <h2>Registrazione</h2>
+      <p class="auth-subtitle">Crea il tuo account per iniziare ad acquistare</p>
+
+      <div id="register-message" class="message-box"></div>
+
+      <div class="form-group">
+        <label for="register-username">Username</label>
+        <input type="text" id="register-username" placeholder="Scegli username">
+      </div>
+
+      <div class="form-group">
+        <label for="register-password">Password</label>
+        <input type="password" id="register-password" placeholder="Scegli password">
+      </div>
+
+      <div class="form-group">
+        <label for="register-password-confirm">Conferma Password</label>
+        <input type="password" id="register-password-confirm" placeholder="Ripeti password">
+      </div>
+
+      <button id="register-submit" class="btn-primary auth-btn" type="button">
+        Registrati
+      </button>
+
+      <div class="auth-links">
+        <p>Hai già un account?</p>
+        <a href="index.html" class="btn-secondary">Torna al login</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
