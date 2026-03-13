@@ -51,17 +51,7 @@ function initLoginPage() {
     }
 
     const btn = document.getElementById("login-submit");
-    const usernameInput = document.getElementById("login-username");
-    const passwordInput = document.getElementById("login-password");
-
     if (btn) btn.addEventListener("click", loginUser);
-
-    [usernameInput, passwordInput].forEach(input => {
-        if (!input) return;
-        input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") loginUser();
-        });
-    });
 }
 
 async function loginUser() {
@@ -100,7 +90,6 @@ async function loginUser() {
             window.location.href = "user.html";
         }
     } catch (error) {
-        console.error("Errore login:", error);
         showMessage(messageBox, "Errore di connessione al server.", "error");
     }
 }
@@ -108,18 +97,7 @@ async function loginUser() {
 /* REGISTER */
 function initRegisterPage() {
     const btn = document.getElementById("register-submit");
-    const usernameInput = document.getElementById("register-username");
-    const passwordInput = document.getElementById("register-password");
-    const confirmInput = document.getElementById("register-password-confirm");
-
     if (btn) btn.addEventListener("click", registerUser);
-
-    [usernameInput, passwordInput, confirmInput].forEach(input => {
-        if (!input) return;
-        input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") registerUser();
-        });
-    });
 }
 
 async function registerUser() {
@@ -167,7 +145,6 @@ async function registerUser() {
             window.location.href = "index.html";
         }, 1400);
     } catch (error) {
-        console.error("Errore register:", error);
         showMessage(messageBox, "Errore di connessione al server.", "error");
     }
 }
@@ -213,17 +190,12 @@ async function loadUserPage() {
 
         setLoggedUser(freshUser);
 
-        const userName = document.getElementById("userName");
-        const userRole = document.getElementById("userRole");
-        const userCredits = document.getElementById("userCredits");
-
-        if (userName) userName.innerText = currentUser.username;
-        if (userRole) userRole.innerText = currentUser.role;
-        if (userCredits) userCredits.innerText = currentUser.crediti;
+        document.getElementById("userName").innerText = currentUser.username;
+        document.getElementById("userRole").innerText = currentUser.role;
+        document.getElementById("userCredits").innerText = currentUser.crediti;
 
         renderUserProducts(prodotti);
     } catch (error) {
-        console.error("Errore loadUserPage:", error);
         const container = document.getElementById("user-products");
         if (container) {
             container.innerHTML = `<div class="error">Errore caricamento catalogo</div>`;
@@ -243,14 +215,13 @@ function renderUserProducts(prodotti) {
     }
 
     prodotti.forEach(p => {
-        const card = document.createElement("div");
-        card.className = "card";
-
         const stockClass =
             p.stock <= 0 ? "stock-out" :
             p.stock <= 3 ? "stock-low" :
             "stock-ok";
 
+        const card = document.createElement("div");
+        card.className = "card";
         card.innerHTML = `
             <h3>${escapeHtml(p.nome)}</h3>
             <p>Prezzo: <strong>${p.prezzo}</strong> crediti</p>
@@ -259,7 +230,6 @@ function renderUserProducts(prodotti) {
                 ${p.stock <= 0 ? "Esaurito" : "Acquista"}
             </button>
         `;
-
         container.appendChild(card);
     });
 
@@ -291,7 +261,6 @@ async function compra(prodottoId) {
         alert("✅ Acquisto completato.");
         loadUserPage();
     } catch (error) {
-        console.error("Errore acquisto:", error);
         alert("⚠️ Errore di connessione al server.");
     }
 }
@@ -316,10 +285,8 @@ function initAdminPage() {
     if (addProductBtn) addProductBtn.addEventListener("click", aggiungiProdotto);
     if (createUserBtn) createUserBtn.addEventListener("click", creaUtenteDaAdmin);
 
-    const adminName = document.getElementById("adminName");
-    const adminRole = document.getElementById("adminRole");
-    if (adminName) adminName.innerText = currentUser.username;
-    if (adminRole) adminRole.innerText = currentUser.role;
+    document.getElementById("adminName").innerText = currentUser.username;
+    document.getElementById("adminRole").innerText = currentUser.role;
 
     loadAdminPage();
 }
@@ -337,46 +304,17 @@ async function loadAdminPage() {
         renderListaUtentiAdmin(profili);
         renderAdminProducts(prodotti);
     } catch (error) {
-        console.error("Errore loadAdminPage:", error);
+        const usersContainer = document.getElementById("users-list-container");
+        const productsContainer = document.getElementById("admin-products");
+
+        if (usersContainer) {
+            usersContainer.innerHTML = `<div class="error">Errore caricamento utenti</div>`;
+        }
+
+        if (productsContainer) {
+            productsContainer.innerHTML = `<div class="error">Errore caricamento prodotti</div>`;
+        }
     }
-}
-
-function renderAdminProducts(prodotti) {
-    const container = document.getElementById("admin-products");
-    if (!container) return;
-
-    container.innerHTML = "";
-
-    if (!prodotti.length) {
-        container.innerHTML = `<div class="info">Nessun prodotto presente nel catalogo.</div>`;
-        return;
-    }
-
-    prodotti.forEach(p => {
-        const card = document.createElement("div");
-        card.className = "card";
-
-        const stockClass =
-            p.stock <= 0 ? "stock-out" :
-            p.stock <= 3 ? "stock-low" :
-            "stock-ok";
-
-        card.innerHTML = `
-            <h3>${escapeHtml(p.nome)}</h3>
-            <p>Prezzo: <strong>${p.prezzo}</strong> crediti</p>
-            <p>Stock attuale: <span class="${stockClass}">${p.stock}</span></p>
-            <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
-                <input type="number" id="st-${p.id}" value="${p.stock}" min="0" style="width: 100px;">
-                <button class="btn-save" data-stock-id="${p.id}">Salva Stock</button>
-            </div>
-        `;
-
-        container.appendChild(card);
-    });
-
-    container.querySelectorAll("[data-stock-id]").forEach(btn => {
-        btn.addEventListener("click", () => updateStock(Number(btn.dataset.stockId)));
-    });
 }
 
 function renderListaUtentiAdmin(profili) {
@@ -391,6 +329,8 @@ function renderListaUtentiAdmin(profili) {
     }
 
     profili.forEach(u => {
+        const isAdminUser = u.role === "admin";
+
         const row = document.createElement("div");
         row.className = "user-row";
 
@@ -402,6 +342,7 @@ function renderListaUtentiAdmin(profili) {
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                 <span>Crediti: <strong style="color:#31e6a8;">${u.crediti}</strong></span>
                 <button class="btn-admin" data-credit-id="${u.id}">Modifica Crediti</button>
+                ${isAdminUser ? "" : `<button class="btn-danger" data-delete-user-id="${u.id}">Elimina Utente</button>`}
             </div>
         `;
 
@@ -411,6 +352,138 @@ function renderListaUtentiAdmin(profili) {
     container.querySelectorAll("[data-credit-id]").forEach(btn => {
         btn.addEventListener("click", () => updateCrediti(Number(btn.dataset.creditId)));
     });
+
+    container.querySelectorAll("[data-delete-user-id]").forEach(btn => {
+        btn.addEventListener("click", () => deleteUser(Number(btn.dataset.deleteUserId)));
+    });
+}
+
+function renderAdminProducts(prodotti) {
+    const container = document.getElementById("admin-products");
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    if (!prodotti.length) {
+        container.innerHTML = `<div class="info">Nessun prodotto presente nel catalogo.</div>`;
+        return;
+    }
+
+    prodotti.forEach(p => {
+        const stockClass =
+            p.stock <= 0 ? "stock-out" :
+            p.stock <= 3 ? "stock-low" :
+            "stock-ok";
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+            <h3>${escapeHtml(p.nome)}</h3>
+            <p>Prezzo attuale: <strong>${p.prezzo}</strong> crediti</p>
+            <p>Stock attuale: <span class="${stockClass}">${p.stock}</span></p>
+
+            <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
+                <input type="number" id="st-${p.id}" value="${p.stock}" min="0" style="width: 100px;">
+                <button class="btn-save" data-stock-id="${p.id}">Salva Stock</button>
+            </div>
+
+            <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
+                <input type="number" id="pr-${p.id}" value="${p.prezzo}" min="0" style="width: 100px;">
+                <button class="btn-admin" data-price-id="${p.id}">Salva Prezzo</button>
+            </div>
+
+            <div style="margin-top:14px;">
+                <button class="btn-danger" data-delete-product-id="${p.id}">Elimina Prodotto</button>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    container.querySelectorAll("[data-stock-id]").forEach(btn => {
+        btn.addEventListener("click", () => updateStock(Number(btn.dataset.stockId)));
+    });
+
+    container.querySelectorAll("[data-price-id]").forEach(btn => {
+        btn.addEventListener("click", () => updatePrezzo(Number(btn.dataset.priceId)));
+    });
+
+    container.querySelectorAll("[data-delete-product-id]").forEach(btn => {
+        btn.addEventListener("click", () => deleteProduct(Number(btn.dataset.deleteProductId)));
+    });
+}
+
+async function aggiungiProdotto() {
+    const nome = document.getElementById("add-nome")?.value.trim() || "";
+    const prezzo = Number(document.getElementById("add-prezzo")?.value);
+    const stock = Number(document.getElementById("add-stock")?.value);
+
+    if (!nome || Number.isNaN(prezzo) || Number.isNaN(stock) || prezzo < 0 || stock < 0) {
+        alert("Compila bene tutti i campi del prodotto.");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/admin/products`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nome, prezzo, stock })
+        });
+
+        const data = await safeJson(res);
+
+        if (!res.ok) {
+            alert(data.error || "Errore creazione prodotto.");
+            return;
+        }
+
+        document.getElementById("add-nome").value = "";
+        document.getElementById("add-prezzo").value = "";
+        document.getElementById("add-stock").value = "";
+
+        alert("📦 Prodotto creato con successo");
+        loadAdminPage();
+    } catch (error) {
+        alert("⚠️ Errore di connessione al server.");
+    }
+}
+
+async function creaUtenteDaAdmin() {
+    const username = document.getElementById("new-username")?.value.trim() || "";
+    const password = document.getElementById("new-password")?.value.trim() || "";
+
+    if (username.length < 3) {
+        alert("Lo username deve avere almeno 3 caratteri.");
+        return;
+    }
+
+    if (!isValidPassword(password)) {
+        alert("La password deve avere almeno 6 caratteri e almeno un numero.");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_URL}/admin/users`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await safeJson(res);
+
+        if (!res.ok) {
+            alert(data.error || "Errore creazione utente.");
+            return;
+        }
+
+        document.getElementById("new-username").value = "";
+        document.getElementById("new-password").value = "";
+
+        alert("✨ Utente creato con successo");
+        loadAdminPage();
+    } catch (error) {
+        alert("⚠️ Errore di connessione al server.");
+    }
 }
 
 async function updateCrediti(userId) {
@@ -426,9 +499,7 @@ async function updateCrediti(userId) {
     try {
         const res = await fetch(`${API_URL}/admin/users/${userId}/credits`, {
             method: "PATCH",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ credits })
         });
 
@@ -442,7 +513,6 @@ async function updateCrediti(userId) {
         alert("✅ Crediti aggiornati");
         loadAdminPage();
     } catch (error) {
-        console.error("Errore updateCrediti:", error);
         alert("⚠️ Errore di connessione al server.");
     }
 }
@@ -460,9 +530,7 @@ async function updateStock(productId) {
     try {
         const res = await fetch(`${API_URL}/admin/products/${productId}/stock`, {
             method: "PATCH",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ stock })
         });
 
@@ -476,93 +544,83 @@ async function updateStock(productId) {
         alert("✅ Stock aggiornato");
         loadAdminPage();
     } catch (error) {
-        console.error("Errore updateStock:", error);
         alert("⚠️ Errore di connessione al server.");
     }
 }
 
-async function aggiungiProdotto() {
-    const nomeInput = document.getElementById("add-nome");
-    const prezzoInput = document.getElementById("add-prezzo");
-    const stockInput = document.getElementById("add-stock");
+async function updatePrezzo(productId) {
+    const input = document.getElementById(`pr-${productId}`);
+    if (!input) return alert("Campo prezzo non trovato");
 
-    const nome = nomeInput?.value.trim() || "";
-    const prezzo = Number(prezzoInput?.value);
-    const stock = Number(stockInput?.value);
-
-    if (!nome || Number.isNaN(prezzo) || Number.isNaN(stock) || prezzo < 0 || stock < 0) {
-        alert("Compila bene tutti i campi del prodotto.");
+    const prezzo = Number(input.value);
+    if (Number.isNaN(prezzo) || prezzo < 0) {
+        alert("Prezzo non valido");
         return;
     }
 
     try {
-        const res = await fetch(`${API_URL}/admin/products`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ nome, prezzo, stock })
+        const res = await fetch(`${API_URL}/admin/products/${productId}/price`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prezzo })
         });
 
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore creazione prodotto.");
+            alert(data.error || "Errore aggiornamento prezzo.");
             return;
         }
 
-        nomeInput.value = "";
-        prezzoInput.value = "";
-        stockInput.value = "";
-
-        alert("📦 Prodotto creato con successo");
+        alert("✅ Prezzo aggiornato");
         loadAdminPage();
     } catch (error) {
-        console.error("Errore aggiungiProdotto:", error);
         alert("⚠️ Errore di connessione al server.");
     }
 }
 
-async function creaUtenteDaAdmin() {
-    const usernameInput = document.getElementById("new-username");
-    const passwordInput = document.getElementById("new-password");
-
-    const username = usernameInput?.value.trim() || "";
-    const password = passwordInput?.value.trim() || "";
-
-    if (username.length < 3) {
-        alert("Lo username deve avere almeno 3 caratteri.");
-        return;
-    }
-
-    if (!isValidPassword(password)) {
-        alert("La password deve avere almeno 6 caratteri e almeno un numero.");
-        return;
-    }
+async function deleteProduct(productId) {
+    const conferma = confirm("Vuoi davvero eliminare questo prodotto?");
+    if (!conferma) return;
 
     try {
-        const res = await fetch(`${API_URL}/admin/users`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ username, password })
+        const res = await fetch(`${API_URL}/admin/products/${productId}`, {
+            method: "DELETE"
         });
 
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore creazione utente.");
+            alert(data.error || "Errore eliminazione prodotto.");
             return;
         }
 
-        usernameInput.value = "";
-        passwordInput.value = "";
-
-        alert("✨ Utente creato con successo");
+        alert("🗑️ Prodotto eliminato con successo");
         loadAdminPage();
     } catch (error) {
-        console.error("Errore creaUtenteDaAdmin:", error);
+        alert("⚠️ Errore di connessione al server.");
+    }
+}
+
+async function deleteUser(userId) {
+    const conferma = confirm("Vuoi davvero eliminare questo utente?");
+    if (!conferma) return;
+
+    try {
+        const res = await fetch(`${API_URL}/admin/users/${userId}`, {
+            method: "DELETE"
+        });
+
+        const data = await safeJson(res);
+
+        if (!res.ok) {
+            alert(data.error || "Errore eliminazione utente.");
+            return;
+        }
+
+        alert("🗑️ Utente eliminato con successo");
+        loadAdminPage();
+    } catch (error) {
         alert("⚠️ Errore di connessione al server.");
     }
 }
