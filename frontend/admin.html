@@ -1,74 +1,42 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MyShop - Admin</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
+<main class="container">
+  <div id="admin-message" class="message-box"></div>
 
-  <nav class="navbar">
-    <div class="container nav-flex">
-      <span class="logo">🛠 Admin Panel</span>
-      <button id="logout-btn" class="btn-secondary" type="button">Logout</button>
+  <section class="admin-panel">
+    <h3 class="section-title">➕ Aggiungi Nuovo Prodotto</h3>
+    <p class="section-subtitle">Inserisci un nuovo prodotto nel catalogo.</p>
+
+    <div class="input-group">
+      <input type="text" id="add-nome" placeholder="Nome Prodotto">
+      <input type="number" id="add-prezzo" placeholder="Prezzo">
+      <input type="number" id="add-stock" placeholder="Stock iniziale">
+      <button id="add-product-btn" class="btn-admin" type="button">
+        Crea Prodotto
+      </button>
     </div>
-  </nav>
+  </section>
 
-  <header class="user-bar">
-    <div class="container bar-flex">
-      <div class="user-info">
-        <div class="user-chip">
-          👤 <span id="adminName">Admin</span>
-        </div>
-        <div class="role-badge">
-          Ruolo: <span id="adminRole">admin</span>
-        </div>
-      </div>
+  <section class="admin-panel">
+    <h3 class="section-title">👤 Crea Nuovo Utente</h3>
+    <p class="section-subtitle">Registra manualmente un nuovo utente.</p>
+
+    <div class="input-group">
+      <input type="text" id="new-username" placeholder="Username nuovo utente">
+      <input type="password" id="new-password" placeholder="Password nuovo utente">
+      <button id="create-user-btn" class="btn-admin" type="button">
+        Crea Utente
+      </button>
     </div>
-  </header>
+  </section>
 
-  <main class="container">
-    <section class="admin-panel">
-      <h3 class="section-title">➕ Aggiungi Nuovo Prodotto</h3>
-      <p class="section-subtitle">Inserisci un nuovo prodotto nel catalogo.</p>
+  <section class="admin-panel">
+    <h3 class="section-title">👥 Gestione Utenti</h3>
+    <p class="section-subtitle">Visualizza utenti, modifica crediti o elimina utenti.</p>
+    <div id="users-list-container"></div>
+  </section>
 
-      <div class="input-group">
-        <input type="text" id="add-nome" placeholder="Nome Prodotto">
-        <input type="number" id="add-prezzo" placeholder="Prezzo">
-        <input type="number" id="add-stock" placeholder="Stock iniziale">
-        <button id="add-product-btn" class="btn-admin" type="button">
-          Crea Prodotto
-        </button>
-      </div>
-    </section>
-
-    <section class="admin-panel">
-      <h3 class="section-title">👤 Crea Nuovo Utente</h3>
-      <p class="section-subtitle">Registra manualmente un nuovo utente.</p>
-
-      <div class="input-group">
-        <input type="text" id="new-username" placeholder="Username nuovo utente">
-        <input type="password" id="new-password" placeholder="Password nuovo utente">
-        <button id="create-user-btn" class="btn-admin" type="button">
-          Crea Utente
-        </button>
-      </div>
-    </section>
-
-    <section class="admin-panel">
-      <h3 class="section-title">👥 Gestione Utenti</h3>
-      <p class="section-subtitle">Visualizza utenti, modifica crediti o elimina utenti.</p>
-      <div id="users-list-container"></div>
-    </section>
-
-    <section class="section-card">
-      <h2 class="page-title">Gestione Catalogo</h2>
-      <p class="section-subtitle">Visualizza prodotti, modifica stock/prezzo o elimina prodotti.</p>
-      <div id="admin-products" class="grid-container"></div>
-    </section>
-  </main>
-
-  <script src="script.js"></script>
-</body>
-</html>
+  <section class="section-card">
+    <h2 class="page-title">Gestione Catalogo</h2>
+    <p class="section-subtitle">Visualizza prodotti, modifica stock/prezzo o elimina prodotti.</p>
+    <div id="admin-products" class="grid-container"></div>
+  </section>
+</main>

@@ -173,7 +173,9 @@ function initUserPage() {
 
 async function loadUserPage() {
     try {
-        const res = await fetch(`${API_URL}/data`);
+        const res = await fetch(`${API_URL}/data`, {
+            cache: "no-store"
+        });
         const data = await safeJson(res);
 
         if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
@@ -293,7 +295,9 @@ function initAdminPage() {
 
 async function loadAdminPage() {
     try {
-        const res = await fetch(`${API_URL}/data`);
+        const res = await fetch(`${API_URL}/data`, {
+            cache: "no-store"
+        });
         const data = await safeJson(res);
 
         if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
@@ -314,6 +318,8 @@ async function loadAdminPage() {
         if (productsContainer) {
             productsContainer.innerHTML = `<div class="error">Errore caricamento prodotti</div>`;
         }
+
+        showAdminMessage("Errore caricamento dati admin.", "error");
     }
 }
 
@@ -333,6 +339,7 @@ function renderListaUtentiAdmin(profili) {
 
         const row = document.createElement("div");
         row.className = "user-row";
+        row.id = `user-row-${u.id}`;
 
         row.innerHTML = `
             <div>
@@ -377,6 +384,8 @@ function renderAdminProducts(prodotti) {
 
         const card = document.createElement("div");
         card.className = "card";
+        card.id = `product-card-${p.id}`;
+
         card.innerHTML = `
             <h3>${escapeHtml(p.nome)}</h3>
             <p>Prezzo attuale: <strong>${p.prezzo}</strong> crediti</p>
@@ -419,7 +428,7 @@ async function aggiungiProdotto() {
     const stock = Number(document.getElementById("add-stock")?.value);
 
     if (!nome || Number.isNaN(prezzo) || Number.isNaN(stock) || prezzo < 0 || stock < 0) {
-        alert("Compila bene tutti i campi del prodotto.");
+        showAdminMessage("Compila bene tutti i campi del prodotto.", "error");
         return;
     }
 
@@ -433,7 +442,7 @@ async function aggiungiProdotto() {
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore creazione prodotto.");
+            showAdminMessage(data.error || "Errore creazione prodotto.", "error");
             return;
         }
 
@@ -441,10 +450,10 @@ async function aggiungiProdotto() {
         document.getElementById("add-prezzo").value = "";
         document.getElementById("add-stock").value = "";
 
-        alert("📦 Prodotto creato con successo");
+        showAdminMessage("📦 Prodotto creato con successo", "success");
         loadAdminPage();
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
@@ -453,12 +462,12 @@ async function creaUtenteDaAdmin() {
     const password = document.getElementById("new-password")?.value.trim() || "";
 
     if (username.length < 3) {
-        alert("Lo username deve avere almeno 3 caratteri.");
+        showAdminMessage("Lo username deve avere almeno 3 caratteri.", "error");
         return;
     }
 
     if (!isValidPassword(password)) {
-        alert("La password deve avere almeno 6 caratteri e almeno un numero.");
+        showAdminMessage("La password deve avere almeno 6 caratteri e almeno un numero.", "error");
         return;
     }
 
@@ -472,17 +481,17 @@ async function creaUtenteDaAdmin() {
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore creazione utente.");
+            showAdminMessage(data.error || "Errore creazione utente.", "error");
             return;
         }
 
         document.getElementById("new-username").value = "";
         document.getElementById("new-password").value = "";
 
-        alert("✨ Utente creato con successo");
+        showAdminMessage("✨ Utente creato con successo", "success");
         loadAdminPage();
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
@@ -492,7 +501,7 @@ async function updateCrediti(userId) {
 
     const credits = Number(valore);
     if (Number.isNaN(credits) || credits < 0) {
-        alert("Inserisci un numero valido maggiore o uguale a 0");
+        showAdminMessage("Inserisci un numero valido maggiore o uguale a 0", "error");
         return;
     }
 
@@ -506,24 +515,27 @@ async function updateCrediti(userId) {
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore aggiornamento crediti.");
+            showAdminMessage(data.error || "Errore aggiornamento crediti.", "error");
             return;
         }
 
-        alert("✅ Crediti aggiornati");
+        showAdminMessage("✅ Crediti aggiornati", "success");
         loadAdminPage();
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
 async function updateStock(productId) {
     const input = document.getElementById(`st-${productId}`);
-    if (!input) return alert("Campo stock non trovato");
+    if (!input) {
+        showAdminMessage("Campo stock non trovato", "error");
+        return;
+    }
 
     const stock = Number(input.value);
     if (Number.isNaN(stock) || stock < 0) {
-        alert("Stock non valido");
+        showAdminMessage("Stock non valido", "error");
         return;
     }
 
@@ -537,24 +549,27 @@ async function updateStock(productId) {
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore aggiornamento stock.");
+            showAdminMessage(data.error || "Errore aggiornamento stock.", "error");
             return;
         }
 
-        alert("✅ Stock aggiornato");
+        showAdminMessage("✅ Stock aggiornato", "success");
         loadAdminPage();
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
 async function updatePrezzo(productId) {
     const input = document.getElementById(`pr-${productId}`);
-    if (!input) return alert("Campo prezzo non trovato");
+    if (!input) {
+        showAdminMessage("Campo prezzo non trovato", "error");
+        return;
+    }
 
     const prezzo = Number(input.value);
     if (Number.isNaN(prezzo) || prezzo < 0) {
-        alert("Prezzo non valido");
+        showAdminMessage("Prezzo non valido", "error");
         return;
     }
 
@@ -568,14 +583,14 @@ async function updatePrezzo(productId) {
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore aggiornamento prezzo.");
+            showAdminMessage(data.error || "Errore aggiornamento prezzo.", "error");
             return;
         }
 
-        alert("✅ Prezzo aggiornato");
+        showAdminMessage("✅ Prezzo aggiornato", "success");
         loadAdminPage();
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
@@ -585,20 +600,29 @@ async function deleteProduct(productId) {
 
     try {
         const res = await fetch(`${API_URL}/admin/products/${productId}`, {
-            method: "DELETE"
+            method: "DELETE",
+            headers: {
+                "Cache-Control": "no-cache"
+            }
         });
 
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore eliminazione prodotto.");
+            showAdminMessage(data.error || "Errore eliminazione prodotto.", "error");
             return;
         }
 
-        alert("🗑️ Prodotto eliminato con successo");
-        loadAdminPage();
+        const card = document.getElementById(`product-card-${productId}`);
+        if (card) card.remove();
+
+        showAdminMessage("🗑️ Prodotto eliminato con successo", "success");
+
+        setTimeout(() => {
+            loadAdminPage();
+        }, 250);
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
@@ -608,20 +632,29 @@ async function deleteUser(userId) {
 
     try {
         const res = await fetch(`${API_URL}/admin/users/${userId}`, {
-            method: "DELETE"
+            method: "DELETE",
+            headers: {
+                "Cache-Control": "no-cache"
+            }
         });
 
         const data = await safeJson(res);
 
         if (!res.ok) {
-            alert(data.error || "Errore eliminazione utente.");
+            showAdminMessage(data.error || "Errore eliminazione utente.", "error");
             return;
         }
 
-        alert("🗑️ Utente eliminato con successo");
-        loadAdminPage();
+        const row = document.getElementById(`user-row-${userId}`);
+        if (row) row.remove();
+
+        showAdminMessage("🗑️ Utente eliminato con successo", "success");
+
+        setTimeout(() => {
+            loadAdminPage();
+        }, 250);
     } catch (error) {
-        alert("⚠️ Errore di connessione al server.");
+        showAdminMessage("⚠️ Errore di connessione al server.", "error");
     }
 }
 
@@ -643,6 +676,18 @@ function clearMessage(element) {
     if (!element) return;
     element.className = "message-box";
     element.innerHTML = "";
+}
+
+function showAdminMessage(text, type = "") {
+    const box = document.getElementById("admin-message");
+    if (!box) {
+        alert(text);
+        return;
+    }
+
+    box.className = "message-box";
+    if (type) box.classList.add(type);
+    box.innerHTML = text;
 }
 
 async function safeJson(res) {

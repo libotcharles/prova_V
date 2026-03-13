@@ -380,19 +380,47 @@ app.patch('/api/admin/products/:id/price', async (req, res) => {
 
 app.delete('/api/admin/products/:id', async (req, res) => {
   try {
-    const id = req.params.id;
+    const id = Number(req.params.id);
 
-    const { error } = await supabase
+    if (Number.isNaN(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID prodotto non valido' });
+    }
+
+    const { data: existingProduct, error: findError } = await supabase
+      .from('prodotti')
+      .select('id, nome')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (findError) throw findError;
+
+    if (!existingProduct) {
+      return res.status(404).json({ error: 'Prodotto non trovato' });
+    }
+
+    const { data: deletedRows, error: deleteError } = await supabase
       .from('prodotti')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id, nome');
 
-    if (error) throw error;
+    if (deleteError) throw deleteError;
 
-    res.json({ success: true, message: 'Prodotto eliminato con successo' });
+    if (!deletedRows || deletedRows.length === 0) {
+      return res.status(500).json({ error: 'Eliminazione prodotto non riuscita' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Prodotto eliminato con successo',
+      deleted: deletedRows[0]
+    });
   } catch (error) {
     console.error('Errore delete product:', error);
-    res.status(500).json({ error: 'Errore eliminazione prodotto', dettaglio: error.message });
+    return res.status(500).json({
+      error: 'Errore eliminazione prodotto',
+      dettaglio: error.message
+    });
   }
 });
 
@@ -423,15 +451,21 @@ app.patch('/api/admin/users/:id/credits', async (req, res) => {
 
 app.delete('/api/admin/users/:id', async (req, res) => {
   try {
-    const id = req.params.id;
+    const id = Number(req.params.id);
+
+    if (Number.isNaN(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID utente non valido' });
+    }
 
     const { data: user, error: findError } = await supabase
       .from('profilo')
-      .select('*')
+      .select('id, username, role')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
-    if (findError || !user) {
+    if (findError) throw findError;
+
+    if (!user) {
       return res.status(404).json({ error: 'Utente non trovato' });
     }
 
@@ -439,17 +473,29 @@ app.delete('/api/admin/users/:id', async (req, res) => {
       return res.status(403).json({ error: 'Non puoi eliminare un admin' });
     }
 
-    const { error } = await supabase
+    const { data: deletedRows, error: deleteError } = await supabase
       .from('profilo')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id, username, role');
 
-    if (error) throw error;
+    if (deleteError) throw deleteError;
 
-    res.json({ success: true, message: 'Utente eliminato con successo' });
+    if (!deletedRows || deletedRows.length === 0) {
+      return res.status(500).json({ error: 'Eliminazione utente non riuscita' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Utente eliminato con successo',
+      deleted: deletedRows[0]
+    });
   } catch (error) {
     console.error('Errore delete user:', error);
-    res.status(500).json({ error: 'Errore eliminazione utente', dettaglio: error.message });
+    return res.status(500).json({
+      error: 'Errore eliminazione utente',
+      dettaglio: error.message
+    });
   }
 });
 
