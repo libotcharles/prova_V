@@ -36,11 +36,10 @@ app.get('/', (req, res) => {
 });
 
 // =========================
-// AUTH LOGIN
+// AUTH LOGIN & REGISTER
 // =========================
 app.post('/api/auth/login', async (req, res) => {
   try {
-
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '').trim();
 
@@ -68,35 +67,19 @@ app.post('/api/auth/login', async (req, res) => {
         role: user.role
       }
     });
-
   } catch (error) {
-
     console.error('Errore login:', error);
-
-    res.status(500).json({
-      error: 'Errore login',
-      dettaglio: error.message
-    });
-
+    res.status(500).json({ error: 'Errore login', dettaglio: error.message });
   }
 });
 
-// =========================
-// REGISTER
-// =========================
 app.post('/api/auth/register', async (req, res) => {
-
   try {
-
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '').trim();
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username e password obbligatori' });
-    }
-
-    if (username.length < 3) {
-      return res.status(400).json({ error: 'Username troppo corto' });
     }
 
     const { data: existingUser } = await supabase
@@ -111,286 +94,82 @@ app.post('/api/auth/register', async (req, res) => {
 
     const { data, error } = await supabase
       .from('profilo')
-      .insert([
-        {
-          username,
-          password,
-          crediti: 1000,
-          role: 'user'
-        }
-      ])
+      .insert([{ username, password, crediti: 1000, role: 'user' }])
       .select()
       .single();
 
     if (error) throw error;
-
-    res.status(201).json({
-      success: true,
-      user: data
-    });
-
+    res.status(201).json({ success: true, user: data });
   } catch (error) {
-
-    console.error('Errore register:', error);
-
-    res.status(500).json({
-      error: 'Errore registrazione',
-      dettaglio: error.message
-    });
-
+    res.status(500).json({ error: 'Errore registrazione', dettaglio: error.message });
   }
-
 });
 
 // =========================
-// DATA
+// DATA & SHOP
 // =========================
 app.get('/api/data', async (req, res) => {
-
   try {
-
-    const { data: prodotti } = await supabase
-      .from('prodotti')
-      .select('*')
-      .order('id');
-
-    const { data: profili } = await supabase
-      .from('profilo')
-      .select('*')
-      .order('id');
-
-    res.json({
-      prodotti,
-      profili
-    });
-
+    const { data: prodotti } = await supabase.from('prodotti').select('*').order('id');
+    const { data: profili } = await supabase.from('profilo').select('*').order('id');
+    res.json({ prodotti, profili });
   } catch (error) {
-
-    console.error('Errore data:', error);
-
-    res.status(500).json({
-      error: 'Errore caricamento dati',
-      dettaglio: error.message
-    });
-
+    res.status(500).json({ error: 'Errore caricamento dati' });
   }
-
 });
 
-// =========================
-// BUY PRODUCT
-// =========================
 app.post('/api/buy', async (req, res) => {
-
   try {
-
     const prodottoId = Number(req.body.prodottoId);
     const userId = Number(req.body.userId);
 
-    if (!prodottoId || !userId) {
-      return res.status(400).json({ error: 'Dati mancanti' });
+    const { data: prod } = await supabase.from('prodotti').select('*').eq('id', prodottoId).maybeSingle();
+    const { data: user } = await supabase.from('profilo').select('*').eq('id', userId).maybeSingle();
+
+    if (!prod || !user || prod.stock <= 0 || user.crediti < prod.prezzo) {
+      return res.status(400).json({ error: 'Acquisto non possibile' });
     }
 
-    const { data: prod } = await supabase
-      .from('prodotti')
-      .select('*')
-      .eq('id', prodottoId)
-      .maybeSingle();
+    await supabase.from('prodotti').update({ stock: prod.stock - 1 }).eq('id', prodottoId);
+    await supabase.from('profilo').update({ crediti: user.crediti - prod.prezzo }).eq('id', userId);
 
-    if (!prod) {
-      return res.status(404).json({ error: 'Prodotto non trovato' });
-    }
-
-    const { data: user } = await supabase
-      .from('profilo')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!user) {
-      return res.status(404).json({ error: 'Utente non trovato' });
-    }
-
-    if (prod.stock <= 0) {
-      return res.status(409).json({ error: 'Prodotto esaurito' });
-    }
-
-    if (user.crediti < prod.prezzo) {
-      return res.status(409).json({ error: 'Crediti insufficienti' });
-    }
-
-    await supabase
-      .from('prodotti')
-      .update({ stock: prod.stock - 1 })
-      .eq('id', prodottoId);
-
-    await supabase
-      .from('profilo')
-      .update({ crediti: user.crediti - prod.prezzo })
-      .eq('id', userId);
-
-    res.json({
-      success: true,
-      message: 'Acquisto completato'
-    });
-
+    res.json({ success: true, message: 'Acquisto completato' });
   } catch (error) {
-
-    console.error('Errore buy:', error);
-
-    res.status(500).json({
-      error: 'Errore acquisto',
-      dettaglio: error.message
-    });
-
+    res.status(500).json({ error: 'Errore acquisto' });
   }
-
 });
 
 // =========================
-// CREATE PRODUCT
+// ADMIN: PRODUCTS
 // =========================
 app.post('/api/admin/products', async (req, res) => {
-
   try {
-
-    const nome = String(req.body.nome || '').trim();
-    const prezzo = Number(req.body.prezzo);
-    const stock = Number(req.body.stock);
-
-    const { data, error } = await supabase
-      .from('prodotti')
-      .insert([{ nome, prezzo, stock }])
-      .select()
-      .single();
-
+    const { nome, prezzo, stock } = req.body;
+    const { data, error } = await supabase.from('prodotti').insert([{ nome, prezzo, stock }]).select().single();
     if (error) throw error;
-
-    res.json({
-      success: true,
-      prodotto: data
-    });
-
+    res.json({ success: true, prodotto: data });
   } catch (error) {
-
-    console.error('Errore create product:', error);
-
-    res.status(500).json({
-      error: 'Errore creazione prodotto'
-    });
-
-  }
-
-});
-
-
-
-app.get('/api/admin/users', async (req, res) => {
-  try {
-    const { data: users, error } = await supabase
-      .from('profilo')
-      .select('*')
-      .order('id');
-
-    if (error) throw error;
-
-    res.json(users);
-  } catch (error) {
-    console.error('Errore get users:', error);
-    res.status(500).json({
-      error: 'Errore caricamento utenti',
-      dettaglio: error.message
-    });
+    res.status(500).json({ error: 'Errore creazione prodotto' });
   }
 });
 
-// =========================
-// DELETE PRODUCT
-// =========================
 app.delete('/api/admin/products/:id', async (req, res) => {
-
   try {
-
-    const id = Number(req.params.id);
-
-    const { data } = await supabase
-      .from('prodotti')
-      .delete()
-      .eq('id', id)
-      .select();
-
-    res.json({
-      success: true,
-      deleted: data
-    });
-
+    const { data } = await supabase.from('prodotti').delete().eq('id', Number(req.params.id)).select();
+    res.json({ success: true, deleted: data });
   } catch (error) {
-
-    console.error('Errore delete product:', error);
-
-    res.status(500).json({
-      error: 'Errore eliminazione prodotto'
-    });
-
+    res.status(500).json({ error: 'Errore eliminazione prodotto' });
   }
-
 });
 
 // =========================
-// DELETE USER
+// ADMIN: USERS (Nuova Funzione POST + GET + DELETE)
 // =========================
-app.delete('/api/admin/users/:id', async (req, res) => {
 
-  try {
-
-    const id = Number(req.params.id);
-
-    const { data: user } = await supabase
-      .from('profilo')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (!user) {
-      return res.status(404).json({ error: 'Utente non trovato' });
-    }
-
-    if (user.role === 'admin') {
-      return res.status(403).json({ error: 'Non puoi eliminare admin' });
-    }
-
-    const { data } = await supabase
-      .from('profilo')
-      .delete()
-      .eq('id', id)
-      .select();
-
-    res.json({
-      success: true,
-      deleted: data
-    });
-
-  } catch (error) {
-
-    console.error('Errore delete user:', error);
-
-    res.status(500).json({
-      error: 'Errore eliminazione utente'
-    });
-
-  }
-
-});
-
-
-
+// GET - Lista utenti
 app.get('/api/admin/users', async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('profilo')
-      .select('*')
-      .order('id');
-
+    const { data, error } = await supabase.from('profilo').select('*').order('id');
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -398,11 +177,43 @@ app.get('/api/admin/users', async (req, res) => {
   }
 });
 
+// POST - Crea utente da Admin (Quella che ti mancava)
+app.post('/api/admin/users', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const { data, error } = await supabase
+      .from('profilo')
+      .insert([{ username, password, crediti: 1000, role: 'user' }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ success: true, user: data });
+  } catch (error) {
+    res.status(500).json({ error: 'Errore creazione utente' });
+  }
+});
+
+// DELETE - Elimina utente
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { data: user } = await supabase.from('profilo').select('*').eq('id', id).maybeSingle();
+
+    if (!user || user.role === 'admin') {
+      return res.status(403).json({ error: 'Impossibile eliminare l\'utente' });
+    }
+
+    const { data } = await supabase.from('profilo').delete().eq('id', id).select();
+    res.json({ success: true, deleted: data });
+  } catch (error) {
+    res.status(500).json({ error: 'Errore eliminazione utente' });
+  }
+});
+
 // =========================
 // START SERVER
 // =========================
 app.listen(PORT, () => {
-
   console.log(`Server acceso sulla porta ${PORT}`);
-
 });
