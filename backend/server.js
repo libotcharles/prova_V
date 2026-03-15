@@ -382,6 +382,22 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 
 });
 
+
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('profilo')
+      .select('*')
+      .order('id');
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // =========================
 // START SERVER
 // =========================
