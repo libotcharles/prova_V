@@ -1,5 +1,7 @@
 const API_URL = "https://prova-v.onrender.com/api";
+
 let currentUser = getLoggedUser();
+let authToken = getAuthToken();
 
 document.addEventListener("DOMContentLoaded", () => {
     const page = getCurrentPage();
@@ -38,14 +40,40 @@ function clearLoggedUser() {
     localStorage.removeItem("loggedUser");
 }
 
+function getAuthToken() {
+    return localStorage.getItem("authToken") || null;
+}
+
+function setAuthToken(token) {
+    authToken = token;
+    localStorage.setItem("authToken", token);
+}
+
+function clearAuthToken() {
+    authToken = null;
+    localStorage.removeItem("authToken");
+}
+
+function getAuthHeaders(extraHeaders = {}) {
+    const headers = {
+        ...extraHeaders
+    };
+
+    if (authToken) {
+        headers.Authorization = `Bearer ${authToken}`;
+    }
+
+    return headers;
+}
+
 /* LOGIN */
 function initLoginPage() {
-    if (currentUser && currentUser.role === "admin") {
+    if (currentUser && authToken && currentUser.role === "admin") {
         window.location.href = "admin.html";
         return;
     }
 
-    if (currentUser && currentUser.role === "user") {
+    if (currentUser && authToken && currentUser.role === "user") {
         window.location.href = "user.html";
         return;
     }
@@ -67,6 +95,8 @@ async function loginUser() {
     }
 
     try {
+        setButtonLoading("login-submit", true, "Accesso...");
+
         const res = await fetch(`${API_URL}/auth/login`, {
             method: "POST",
             headers: {
@@ -82,7 +112,15 @@ async function loginUser() {
             return;
         }
 
+        if (!data.token || !data.user) {
+            showMessage(messageBox, "Risposta login non valida.", "error");
+            return;
+        }
+
+        setAuthToken(data.token);
         setLoggedUser(data.user);
+
+        showMessage(messageBox, "Login effettuato con successo.", "success");
 
         if (data.user.role === "admin") {
             window.location.href = "admin.html";
@@ -91,6 +129,8 @@ async function loginUser() {
         }
     } catch (error) {
         showMessage(messageBox, "Errore di connessione al server.", "error");
+    } finally {
+        setButtonLoading("login-submit", false);
     }
 }
 
@@ -108,8 +148,12 @@ async function registerUser() {
 
     clearMessage(messageBox);
 
-    if (username.length < 3) {
-        showMessage(messageBox, "Lo username deve avere almeno 3 caratteri.", "error");
+    if (!isValidUsername(username)) {
+        showMessage(
+            messageBox,
+            "Username non valido: usa 3-30 caratteri, solo lettere, numeri e underscore.",
+            "error"
+        );
         return;
     }
 
@@ -124,6 +168,8 @@ async function registerUser() {
     }
 
     try {
+        setButtonLoading("register-submit", true, "Registrazione...");
+
         const res = await fetch(`${API_URL}/auth/register`, {
             method: "POST",
             headers: {
@@ -146,16 +192,27 @@ async function registerUser() {
         }, 1400);
     } catch (error) {
         showMessage(messageBox, "Errore di connessione al server.", "error");
+    } finally {
+        setButtonLoading("register-submit", false);
     }
 }
 
 function isValidPassword(password) {
-    return password.length >= 6 && /\d/.test(password);
+    return typeof password === "string" && password.length >= 6 && /\d/.test(password);
+}
+
+function isValidUsername(username) {
+    return (
+        typeof username === "string" &&
+        username.length >= 3 &&
+        username.length <= 30 &&
+        /^[a-zA-Z0-9_]+$/.test(username)
+    );
 }
 
 /* USER */
 function initUserPage() {
-    if (!currentUser) {
+    if (!currentUser || !authToken) {
         window.location.href = "index.html";
         return;
     }
@@ -173,28 +230,49 @@ function initUserPage() {
 
 async function loadUserPage() {
     try {
-        const res = await fetch(`${API_URL}/data`, {
-            cache: "no-store"
-        });
-        const data = await safeJson(res);
+        const [meRes, productsRes] = await Promise.all([
+            fetch(`${API_URL}/me`, {
+                headers: getAuthHeaders(),
+                cache: "no-store"
+            }),
+            fetch(`${API_URL}/products`, {
+                cache: "no-store"
+            })
+        ]);
 
-        if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
+        const meData = await safeJson(meRes);
+        const productsData = await safeJson(productsRes);
 
-        const profili = Array.isArray(data.profili) ? data.profili : [];
-        const prodotti = Array.isArray(data.prodotti) ? data.prodotti : [];
+        if (meRes.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
-        const freshUser = profili.find(u => Number(u.id) === Number(currentUser.id));
+        if (!meRes.ok) {
+            throw new Error(meData.error || "Errore caricamento profilo");
+        }
+
+        if (!productsRes.ok) {
+            throw new Error(productsData.error || "Errore caricamento prodotti");
+        }
+
+        const freshUser = meData.user;
+        const prodotti = Array.isArray(productsData.prodotti) ? productsData.prodotti : [];
+
         if (!freshUser) {
-            alert("Utente non trovato. Effettua di nuovo il login.");
-            logoutUser();
+            handleUnauthorized();
             return;
         }
 
         setLoggedUser(freshUser);
 
-        document.getElementById("userName").innerText = currentUser.username;
-        document.getElementById("userRole").innerText = currentUser.role;
-        document.getElementById("userCredits").innerText = currentUser.crediti;
+        const nameEl = document.getElementById("userName");
+        const roleEl = document.getElementById("userRole");
+        const creditsEl = document.getElementById("userCredits");
+
+        if (nameEl) nameEl.innerText = currentUser.username;
+        if (roleEl) roleEl.innerText = currentUser.role;
+        if (creditsEl) creditsEl.innerText = currentUser.crediti;
 
         renderUserProducts(prodotti);
     } catch (error) {
@@ -236,24 +314,39 @@ function renderUserProducts(prodotti) {
     });
 
     container.querySelectorAll("[data-buy-id]").forEach(btn => {
-        btn.addEventListener("click", () => compra(Number(btn.dataset.buyId)));
+        btn.addEventListener("click", () => compra(Number(btn.dataset.buyId), btn));
     });
 }
 
-async function compra(prodottoId) {
+async function compra(prodottoId, clickedButton = null) {
+    if (!authToken) {
+        handleUnauthorized();
+        return;
+    }
+
     try {
+        if (clickedButton) {
+            clickedButton.disabled = true;
+            clickedButton.dataset.oldText = clickedButton.innerText;
+            clickedButton.innerText = "Acquisto...";
+        }
+
         const res = await fetch(`${API_URL}/buy`, {
             method: "POST",
-            headers: {
+            headers: getAuthHeaders({
                 "Content-Type": "application/json"
-            },
+            }),
             body: JSON.stringify({
-                prodottoId,
-                userId: currentUser.id
+                prodottoId
             })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             alert(data.error || "Errore durante l'acquisto.");
@@ -261,15 +354,20 @@ async function compra(prodottoId) {
         }
 
         alert("✅ Acquisto completato.");
-        loadUserPage();
+        await loadUserPage();
     } catch (error) {
         alert("⚠️ Errore di connessione al server.");
+    } finally {
+        if (clickedButton) {
+            clickedButton.disabled = false;
+            clickedButton.innerText = clickedButton.dataset.oldText || "Acquista";
+        }
     }
 }
 
 /* ADMIN */
 function initAdminPage() {
-    if (!currentUser) {
+    if (!currentUser || !authToken) {
         window.location.href = "index.html";
         return;
     }
@@ -287,18 +385,36 @@ function initAdminPage() {
     if (addProductBtn) addProductBtn.addEventListener("click", aggiungiProdotto);
     if (createUserBtn) createUserBtn.addEventListener("click", creaUtenteDaAdmin);
 
-    document.getElementById("adminName").innerText = currentUser.username;
-    document.getElementById("adminRole").innerText = currentUser.role;
+    const adminNameEl = document.getElementById("adminName");
+    const adminRoleEl = document.getElementById("adminRole");
+
+    if (adminNameEl) adminNameEl.innerText = currentUser.username;
+    if (adminRoleEl) adminRoleEl.innerText = currentUser.role;
 
     loadAdminPage();
 }
 
 async function loadAdminPage() {
     try {
-        const res = await fetch(`${API_URL}/data`, {
+        const res = await fetch(`${API_URL}/admin/data`, {
+            headers: getAuthHeaders(),
             cache: "no-store"
         });
+
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
+
+        if (res.status === 403) {
+            showAdminMessage("Accesso riservato agli admin.", "error");
+            setTimeout(() => {
+                window.location.href = "user.html";
+            }, 1000);
+            return;
+        }
 
         if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
 
@@ -392,12 +508,12 @@ function renderAdminProducts(prodotti) {
             <p>Stock attuale: <span class="${stockClass}">${p.stock}</span></p>
 
             <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
-                <input type="number" id="st-${p.id}" value="${p.stock}" min="0" style="width: 100px;">
+                <input type="number" id="st-${p.id}" value="${p.stock}" min="0" step="1" style="width: 100px;">
                 <button class="btn-save" data-stock-id="${p.id}">Salva Stock</button>
             </div>
 
             <div class="admin-controls" style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
-                <input type="number" id="pr-${p.id}" value="${p.prezzo}" min="0" style="width: 100px;">
+                <input type="number" id="pr-${p.id}" value="${p.prezzo}" min="0" step="0.01" style="width: 100px;">
                 <button class="btn-admin" data-price-id="${p.id}">Salva Prezzo</button>
             </div>
 
@@ -433,13 +549,22 @@ async function aggiungiProdotto() {
     }
 
     try {
+        setButtonLoading("add-product-btn", true, "Salvataggio...");
+
         const res = await fetch(`${API_URL}/admin/products`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({
+                "Content-Type": "application/json"
+            }),
             body: JSON.stringify({ nome, prezzo, stock })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore creazione prodotto.", "error");
@@ -454,6 +579,8 @@ async function aggiungiProdotto() {
         loadAdminPage();
     } catch (error) {
         showAdminMessage("⚠️ Errore di connessione al server.", "error");
+    } finally {
+        setButtonLoading("add-product-btn", false);
     }
 }
 
@@ -461,8 +588,8 @@ async function creaUtenteDaAdmin() {
     const username = document.getElementById("new-username")?.value.trim() || "";
     const password = document.getElementById("new-password")?.value.trim() || "";
 
-    if (username.length < 3) {
-        showAdminMessage("Lo username deve avere almeno 3 caratteri.", "error");
+    if (!isValidUsername(username)) {
+        showAdminMessage("Username non valido: usa 3-30 caratteri, solo lettere, numeri e underscore.", "error");
         return;
     }
 
@@ -472,13 +599,22 @@ async function creaUtenteDaAdmin() {
     }
 
     try {
+        setButtonLoading("create-user-btn", true, "Creazione...");
+
         const res = await fetch(`${API_URL}/admin/users`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({
+                "Content-Type": "application/json"
+            }),
             body: JSON.stringify({ username, password })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore creazione utente.", "error");
@@ -492,6 +628,8 @@ async function creaUtenteDaAdmin() {
         loadAdminPage();
     } catch (error) {
         showAdminMessage("⚠️ Errore di connessione al server.", "error");
+    } finally {
+        setButtonLoading("create-user-btn", false);
     }
 }
 
@@ -500,19 +638,26 @@ async function updateCrediti(userId) {
     if (valore === null || valore.trim() === "") return;
 
     const credits = Number(valore);
-    if (Number.isNaN(credits) || credits < 0) {
-        showAdminMessage("Inserisci un numero valido maggiore o uguale a 0", "error");
+    if (!Number.isInteger(credits) || credits < 0) {
+        showAdminMessage("Inserisci un numero intero valido maggiore o uguale a 0", "error");
         return;
     }
 
     try {
         const res = await fetch(`${API_URL}/admin/users/${userId}/credits`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({
+                "Content-Type": "application/json"
+            }),
             body: JSON.stringify({ credits })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore aggiornamento crediti.", "error");
@@ -534,7 +679,7 @@ async function updateStock(productId) {
     }
 
     const stock = Number(input.value);
-    if (Number.isNaN(stock) || stock < 0) {
+    if (!Number.isInteger(stock) || stock < 0) {
         showAdminMessage("Stock non valido", "error");
         return;
     }
@@ -542,11 +687,18 @@ async function updateStock(productId) {
     try {
         const res = await fetch(`${API_URL}/admin/products/${productId}/stock`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({
+                "Content-Type": "application/json"
+            }),
             body: JSON.stringify({ stock })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore aggiornamento stock.", "error");
@@ -576,11 +728,18 @@ async function updatePrezzo(productId) {
     try {
         const res = await fetch(`${API_URL}/admin/products/${productId}/price`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({
+                "Content-Type": "application/json"
+            }),
             body: JSON.stringify({ prezzo })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore aggiornamento prezzo.", "error");
@@ -601,12 +760,17 @@ async function deleteProduct(productId) {
     try {
         const res = await fetch(`${API_URL}/admin/products/${productId}`, {
             method: "DELETE",
-            headers: {
+            headers: getAuthHeaders({
                 "Cache-Control": "no-cache"
-            }
+            })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore eliminazione prodotto.", "error");
@@ -633,12 +797,17 @@ async function deleteUser(userId) {
     try {
         const res = await fetch(`${API_URL}/admin/users/${userId}`, {
             method: "DELETE",
-            headers: {
+            headers: getAuthHeaders({
                 "Cache-Control": "no-cache"
-            }
+            })
         });
 
         const data = await safeJson(res);
+
+        if (res.status === 401) {
+            handleUnauthorized();
+            return;
+        }
 
         if (!res.ok) {
             showAdminMessage(data.error || "Errore eliminazione utente.", "error");
@@ -661,6 +830,14 @@ async function deleteUser(userId) {
 /* LOGOUT */
 function logoutUser() {
     clearLoggedUser();
+    clearAuthToken();
+    window.location.href = "index.html";
+}
+
+function handleUnauthorized() {
+    clearLoggedUser();
+    clearAuthToken();
+    alert("Sessione scaduta o non valida. Effettua di nuovo il login.");
     window.location.href = "index.html";
 }
 
@@ -707,3 +884,16 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
+function setButtonLoading(buttonId, isLoading, loadingText = "Caricamento...") {
+    const btn = document.getElementById(buttonId);
+    if (!btn) return;
+
+    if (isLoading) {
+        btn.dataset.originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = loadingText;
+    } else {
+        btn.disabled = false;
+        btn.innerHTML = btn.dataset.originalText || btn.innerHTML;
+    }
+}

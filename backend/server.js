@@ -3,36 +3,79 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // =========================
-// CONFIG SUPABASE
+// CONFIG
 // =========================
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const jwtSecret = process.env.JWT_SECRET;
+const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+const isProduction = process.env.NODE_ENV === 'production';
 
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Errore: SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY mancanti.');
+if (!supabaseUrl || !supabaseKey || !jwtSecret) {
+  console.error('Errore: variabili ambiente mancanti (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET).');
   process.exit(1);
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // =========================
-// MIDDLEWARE
+// MIDDLEWARE SICUREZZA
 // =========================
-app.use(cors({ origin: '*' }));
-app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+app.use(helmet());
+
+app.use(cors({
+  origin: [clientUrl],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json({ limit: '10kb' }));
+
+// Servi solo una cartella pubblica, non tutta __dirname
+app.use(express.static(path.join(__dirname, 'public')));
+
+// =========================
+// RATE LIMIT
+// =========================
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    success: false,
+    error: 'Troppi tentativi di login. Riprova più tardi.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // =========================
 // HELPERS
 // =========================
 function isValidPassword(password) {
-  return typeof password === 'string' && password.length >= 6 && /\d/.test(password);
+  return (
+    typeof password === 'string' &&
+    password.length >= 6 &&
+    /\d/.test(password)
+  );
+}
+
+function isValidUsername(username) {
+  return (
+    typeof username === 'string' &&
+    username.length >= 3 &&
+    username.length <= 30 &&
+    /^[a-zA-Z0-9_]+$/.test(username)
+  );
 }
 
 function isNonNegativeNumber(value) {
@@ -43,43 +86,98 @@ function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
+function sendError(res, status, message) {
+  return res.status(status).json({
+    success: false,
+    error: message
+  });
+}
+
+function generateToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      role: user.role
+    },
+    jwtSecret,
+    { expiresIn: '2h' }
+  );
+}
+
+// =========================
+// AUTH MIDDLEWARE
+// =========================
+function requireAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return sendError(res, 401, 'Token mancante o non valido');
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, jwtSecret);
+
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return sendError(res, 401, 'Sessione non valida o scaduta');
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return sendError(res, 403, 'Accesso riservato agli admin');
+  }
+  next();
+}
+
 // =========================
 // ROOT
 // =========================
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // =========================
 // AUTH LOGIN
 // =========================
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '').trim();
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username e password obbligatori' });
+      return sendError(res, 400, 'Username e password obbligatori');
     }
 
     const { data: user, error } = await supabase
       .from('profilo')
       .select('id, username, crediti, role, password')
       .eq('username', username)
-      .eq('password', password)
       .maybeSingle();
 
     if (error) {
       console.error('Errore query login:', error);
-      return res.status(500).json({ error: 'Errore login database' });
+      return sendError(res, 500, 'Errore interno durante il login');
     }
 
     if (!user) {
-      return res.status(401).json({ error: 'Credenziali non valide' });
+      return sendError(res, 401, 'Credenziali non valide');
     }
+
+    const passwordMatch = await bcrypt.compare(password, user.password);
+
+    if (!passwordMatch) {
+      return sendError(res, 401, 'Credenziali non valide');
+    }
+
+    const token = generateToken(user);
 
     return res.json({
       success: true,
+      token,
       user: {
         id: user.id,
         username: user.username,
@@ -89,11 +187,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore login:', error);
-
-    return res.status(500).json({
-      error: 'Errore login',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore interno durante il login');
   }
 });
 
@@ -106,40 +200,48 @@ app.post('/api/auth/register', async (req, res) => {
     const password = String(req.body.password || '').trim();
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username e password obbligatori' });
+      return sendError(res, 400, 'Username e password obbligatori');
     }
 
-    if (username.length < 3) {
-      return res.status(400).json({ error: 'Username troppo corto' });
+    if (!isValidUsername(username)) {
+      return sendError(
+        res,
+        400,
+        'Username non valido: usa 3-30 caratteri, solo lettere, numeri e underscore'
+      );
     }
 
     if (!isValidPassword(password)) {
-      return res.status(400).json({
-        error: 'La password deve avere almeno 6 caratteri e almeno un numero'
-      });
+      return sendError(
+        res,
+        400,
+        'La password deve avere almeno 6 caratteri e almeno un numero'
+      );
     }
 
     const { data: existingUser, error: existingError } = await supabase
       .from('profilo')
       .select('id')
-      .ilike('username', username)
+      .eq('username', username)
       .maybeSingle();
 
     if (existingError) {
-      console.error('Errore check user esistente:', existingError);
-      return res.status(500).json({ error: 'Errore controllo username' });
+      console.error('Errore controllo username:', existingError);
+      return sendError(res, 500, 'Errore controllo username');
     }
 
     if (existingUser) {
-      return res.status(409).json({ error: 'Username già esistente' });
+      return sendError(res, 409, 'Username già esistente');
     }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const { data, error } = await supabase
       .from('profilo')
       .insert([
         {
           username,
-          password,
+          password: hashedPassword,
           crediti: 1000,
           role: 'user'
         }
@@ -148,30 +250,82 @@ app.post('/api/auth/register', async (req, res) => {
       .single();
 
     if (error) {
-      console.error('Errore insert register:', error);
-      return res.status(500).json({ error: 'Errore registrazione' });
+      console.error('Errore registrazione:', error);
+      return sendError(res, 500, 'Errore registrazione');
     }
+
+    const token = generateToken(data);
 
     return res.status(201).json({
       success: true,
+      token,
       user: data
     });
   } catch (error) {
     console.error('Errore register:', error);
-
-    return res.status(500).json({
-      error: 'Errore registrazione',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore interno durante la registrazione');
   }
 });
 
 // =========================
-// DATA
+// PROFILO UTENTE LOGGATO
 // =========================
-// ATTENZIONE: non restituisce password
+app.get('/api/me', requireAuth, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase
+      .from('profilo')
+      .select('id, username, crediti, role')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Errore lettura profilo:', error);
+      return sendError(res, 500, 'Errore caricamento profilo');
+    }
+
+    if (!user) {
+      return sendError(res, 404, 'Utente non trovato');
+    }
+
+    return res.json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    console.error('Errore /api/me:', error);
+    return sendError(res, 500, 'Errore caricamento profilo');
+  }
+});
+
 // =========================
-app.get('/api/data', async (req, res) => {
+// PRODOTTI PUBBLICI
+// =========================
+app.get('/api/products', async (req, res) => {
+  try {
+    const { data: prodotti, error } = await supabase
+      .from('prodotti')
+      .select('id, nome, prezzo, stock')
+      .order('id');
+
+    if (error) {
+      console.error('Errore lettura prodotti:', error);
+      return sendError(res, 500, 'Errore caricamento prodotti');
+    }
+
+    return res.json({
+      success: true,
+      prodotti: prodotti || []
+    });
+  } catch (error) {
+    console.error('Errore /api/products:', error);
+    return sendError(res, 500, 'Errore caricamento prodotti');
+  }
+});
+
+// =========================
+// ADMIN: TUTTI I DATI
+// =========================
+app.get('/api/admin/data', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data: prodotti, error: prodottiError } = await supabase
       .from('prodotti')
@@ -179,8 +333,8 @@ app.get('/api/data', async (req, res) => {
       .order('id');
 
     if (prodottiError) {
-      console.error('Errore lettura prodotti:', prodottiError);
-      return res.status(500).json({ error: 'Errore caricamento prodotti' });
+      console.error('Errore lettura prodotti admin:', prodottiError);
+      return sendError(res, 500, 'Errore caricamento prodotti');
     }
 
     const { data: profili, error: profiliError } = await supabase
@@ -189,34 +343,33 @@ app.get('/api/data', async (req, res) => {
       .order('id');
 
     if (profiliError) {
-      console.error('Errore lettura profili:', profiliError);
-      return res.status(500).json({ error: 'Errore caricamento profili' });
+      console.error('Errore lettura profili admin:', profiliError);
+      return sendError(res, 500, 'Errore caricamento profili');
     }
 
     return res.json({
+      success: true,
       prodotti: prodotti || [],
       profili: profili || []
     });
   } catch (error) {
-    console.error('Errore data:', error);
-
-    return res.status(500).json({
-      error: 'Errore caricamento dati',
-      dettaglio: error.message
-    });
+    console.error('Errore /api/admin/data:', error);
+    return sendError(res, 500, 'Errore caricamento dati admin');
   }
 });
 
 // =========================
 // BUY PRODUCT
+// Nota: per un progetto scolastico va bene così,
+// ma in produzione sarebbe meglio una transazione DB.
 // =========================
-app.post('/api/buy', async (req, res) => {
+app.post('/api/buy', requireAuth, async (req, res) => {
   try {
     const prodottoId = Number(req.body.prodottoId);
-    const userId = Number(req.body.userId);
+    const userId = req.user.id;
 
-    if (!prodottoId || !userId) {
-      return res.status(400).json({ error: 'Dati mancanti' });
+    if (!isNonNegativeInteger(prodottoId) || prodottoId <= 0) {
+      return sendError(res, 400, 'ID prodotto non valido');
     }
 
     const { data: prod, error: prodError } = await supabase
@@ -227,11 +380,11 @@ app.post('/api/buy', async (req, res) => {
 
     if (prodError) {
       console.error('Errore lettura prodotto:', prodError);
-      return res.status(500).json({ error: 'Errore lettura prodotto' });
+      return sendError(res, 500, 'Errore lettura prodotto');
     }
 
     if (!prod) {
-      return res.status(404).json({ error: 'Prodotto non trovato' });
+      return sendError(res, 404, 'Prodotto non trovato');
     }
 
     const { data: user, error: userError } = await supabase
@@ -242,74 +395,80 @@ app.post('/api/buy', async (req, res) => {
 
     if (userError) {
       console.error('Errore lettura utente:', userError);
-      return res.status(500).json({ error: 'Errore lettura utente' });
+      return sendError(res, 500, 'Errore lettura utente');
     }
 
     if (!user) {
-      return res.status(404).json({ error: 'Utente non trovato' });
+      return sendError(res, 404, 'Utente non trovato');
     }
 
     if (prod.stock <= 0) {
-      return res.status(409).json({ error: 'Prodotto esaurito' });
+      return sendError(res, 409, 'Prodotto esaurito');
     }
 
     if (user.crediti < prod.prezzo) {
-      return res.status(409).json({ error: 'Crediti insufficienti' });
+      return sendError(res, 409, 'Crediti insufficienti');
     }
+
+    const newStock = prod.stock - 1;
+    const newCredits = user.crediti - prod.prezzo;
 
     const { error: updateProdError } = await supabase
       .from('prodotti')
-      .update({ stock: prod.stock - 1 })
+      .update({ stock: newStock })
       .eq('id', prodottoId);
 
     if (updateProdError) {
       console.error('Errore update stock acquisto:', updateProdError);
-      return res.status(500).json({ error: 'Errore aggiornamento stock' });
+      return sendError(res, 500, 'Errore aggiornamento stock');
     }
 
     const { error: updateUserError } = await supabase
       .from('profilo')
-      .update({ crediti: user.crediti - prod.prezzo })
+      .update({ crediti: newCredits })
       .eq('id', userId);
 
     if (updateUserError) {
       console.error('Errore update crediti acquisto:', updateUserError);
-      return res.status(500).json({ error: 'Errore aggiornamento crediti' });
+      return sendError(res, 500, 'Errore aggiornamento crediti');
     }
 
     return res.json({
       success: true,
-      message: 'Acquisto completato'
+      message: 'Acquisto completato',
+      acquisto: {
+        prodottoId: prod.id,
+        nome: prod.nome,
+        prezzo: prod.prezzo,
+        creditiRimanenti: newCredits,
+        stockRimanente: newStock
+      }
     });
   } catch (error) {
     console.error('Errore buy:', error);
-
-    return res.status(500).json({
-      error: 'Errore acquisto',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore acquisto');
   }
 });
 
 // =========================
-// CREATE PRODUCT
+// ADMIN - CREATE PRODUCT
 // =========================
-app.post('/api/admin/products', async (req, res) => {
+app.post('/api/admin/products', requireAuth, requireAdmin, async (req, res) => {
   try {
     const nome = String(req.body.nome || '').trim();
     const prezzo = Number(req.body.prezzo);
     const stock = Number(req.body.stock);
 
-    if (!nome) {
-      return res.status(400).json({ error: 'Nome prodotto obbligatorio' });
+    if (!nome || nome.length < 2 || nome.length > 100) {
+      return sendError(res, 400, 'Nome prodotto non valido');
     }
 
     if (!isNonNegativeNumber(prezzo)) {
-      return res.status(400).json({ error: 'Prezzo non valido' });
+      return sendError(res, 400, 'Prezzo non valido');
     }
 
     if (!isNonNegativeInteger(stock)) {
-      return res.status(400).json({ error: 'Stock non valido' });
+      return sendError(res, 400, 'Stock non valido');
     }
 
     const { data, error } = await supabase
@@ -320,68 +479,73 @@ app.post('/api/admin/products', async (req, res) => {
 
     if (error) {
       console.error('Errore create product:', error);
-      return res.status(500).json({ error: 'Errore creazione prodotto' });
+      return sendError(res, 500, 'Errore creazione prodotto');
     }
 
-    return res.json({
+    return res.status(201).json({
       success: true,
       prodotto: data
     });
   } catch (error) {
     console.error('Errore create product:', error);
-
-    return res.status(500).json({
-      error: 'Errore creazione prodotto',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore creazione prodotto');
   }
 });
 
 // =========================
-// CREATE USER FROM ADMIN
+// ADMIN - CREATE USER
 // =========================
-app.post('/api/admin/users', async (req, res) => {
+app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '').trim();
+    const role = req.body.role === 'admin' ? 'admin' : 'user';
 
     if (!username || !password) {
-      return res.status(400).json({ error: 'Username e password obbligatori' });
+      return sendError(res, 400, 'Username e password obbligatori');
     }
 
-    if (username.length < 3) {
-      return res.status(400).json({ error: 'Lo username deve avere almeno 3 caratteri' });
+    if (!isValidUsername(username)) {
+      return sendError(
+        res,
+        400,
+        'Username non valido: usa 3-30 caratteri, solo lettere, numeri e underscore'
+      );
     }
 
     if (!isValidPassword(password)) {
-      return res.status(400).json({
-        error: 'La password deve avere almeno 6 caratteri e almeno un numero'
-      });
+      return sendError(
+        res,
+        400,
+        'La password deve avere almeno 6 caratteri e almeno un numero'
+      );
     }
 
     const { data: existingUser, error: existingError } = await supabase
       .from('profilo')
       .select('id')
-      .ilike('username', username)
+      .eq('username', username)
       .maybeSingle();
 
     if (existingError) {
-      console.error('Errore check username admin create:', existingError);
-      return res.status(500).json({ error: 'Errore controllo username' });
+      console.error('Errore controllo username admin:', existingError);
+      return sendError(res, 500, 'Errore controllo username');
     }
 
     if (existingUser) {
-      return res.status(409).json({ error: 'Username già esistente' });
+      return sendError(res, 409, 'Username già esistente');
     }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const { data, error } = await supabase
       .from('profilo')
       .insert([
         {
           username,
-          password,
+          password: hashedPassword,
           crediti: 1000,
-          role: 'user'
+          role
         }
       ])
       .select('id, username, crediti, role')
@@ -389,7 +553,7 @@ app.post('/api/admin/users', async (req, res) => {
 
     if (error) {
       console.error('Errore creazione utente admin:', error);
-      return res.status(500).json({ error: 'Errore creazione utente' });
+      return sendError(res, 500, 'Errore creazione utente');
     }
 
     return res.status(201).json({
@@ -398,30 +562,25 @@ app.post('/api/admin/users', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore create user admin:', error);
-
-    return res.status(500).json({
-      error: 'Errore creazione utente',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore creazione utente');
   }
 });
 
 // =========================
-// UPDATE USER CREDITS
-// Compatibile con frontend:
+// ADMIN - UPDATE USER CREDITS
 // body: { credits }
 // =========================
-app.patch('/api/admin/users/:id/credits', async (req, res) => {
+app.patch('/api/admin/users/:id/credits', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const credits = Number(req.body.credits);
 
-    if (!id) {
-      return res.status(400).json({ error: 'ID utente non valido' });
+    if (!isNonNegativeInteger(id) || id <= 0) {
+      return sendError(res, 400, 'ID utente non valido');
     }
 
     if (!isNonNegativeInteger(credits)) {
-      return res.status(400).json({ error: 'Crediti non validi' });
+      return sendError(res, 400, 'Crediti non validi');
     }
 
     const { data: user, error: userError } = await supabase
@@ -432,11 +591,11 @@ app.patch('/api/admin/users/:id/credits', async (req, res) => {
 
     if (userError) {
       console.error('Errore lettura utente credits:', userError);
-      return res.status(500).json({ error: 'Errore lettura utente' });
+      return sendError(res, 500, 'Errore lettura utente');
     }
 
     if (!user) {
-      return res.status(404).json({ error: 'Utente non trovato' });
+      return sendError(res, 404, 'Utente non trovato');
     }
 
     const { data, error } = await supabase
@@ -448,7 +607,7 @@ app.patch('/api/admin/users/:id/credits', async (req, res) => {
 
     if (error) {
       console.error('Errore update crediti:', error);
-      return res.status(500).json({ error: 'Errore aggiornamento crediti' });
+      return sendError(res, 500, 'Errore aggiornamento crediti');
     }
 
     return res.json({
@@ -457,30 +616,25 @@ app.patch('/api/admin/users/:id/credits', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore update credits:', error);
-
-    return res.status(500).json({
-      error: 'Errore aggiornamento crediti',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore aggiornamento crediti');
   }
 });
 
 // =========================
-// UPDATE PRODUCT STOCK
-// Compatibile con frontend:
+// ADMIN - UPDATE PRODUCT STOCK
 // body: { stock }
 // =========================
-app.patch('/api/admin/products/:id/stock', async (req, res) => {
+app.patch('/api/admin/products/:id/stock', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const stock = Number(req.body.stock);
 
-    if (!id) {
-      return res.status(400).json({ error: 'ID prodotto non valido' });
+    if (!isNonNegativeInteger(id) || id <= 0) {
+      return sendError(res, 400, 'ID prodotto non valido');
     }
 
     if (!isNonNegativeInteger(stock)) {
-      return res.status(400).json({ error: 'Stock non valido' });
+      return sendError(res, 400, 'Stock non valido');
     }
 
     const { data: product, error: productError } = await supabase
@@ -491,11 +645,11 @@ app.patch('/api/admin/products/:id/stock', async (req, res) => {
 
     if (productError) {
       console.error('Errore lettura prodotto stock:', productError);
-      return res.status(500).json({ error: 'Errore lettura prodotto' });
+      return sendError(res, 500, 'Errore lettura prodotto');
     }
 
     if (!product) {
-      return res.status(404).json({ error: 'Prodotto non trovato' });
+      return sendError(res, 404, 'Prodotto non trovato');
     }
 
     const { data, error } = await supabase
@@ -507,7 +661,7 @@ app.patch('/api/admin/products/:id/stock', async (req, res) => {
 
     if (error) {
       console.error('Errore update stock:', error);
-      return res.status(500).json({ error: 'Errore aggiornamento stock' });
+      return sendError(res, 500, 'Errore aggiornamento stock');
     }
 
     return res.json({
@@ -516,30 +670,25 @@ app.patch('/api/admin/products/:id/stock', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore update stock:', error);
-
-    return res.status(500).json({
-      error: 'Errore aggiornamento stock',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore aggiornamento stock');
   }
 });
 
 // =========================
-// UPDATE PRODUCT PRICE
-// Compatibile con frontend:
+// ADMIN - UPDATE PRODUCT PRICE
 // body: { prezzo }
 // =========================
-app.patch('/api/admin/products/:id/price', async (req, res) => {
+app.patch('/api/admin/products/:id/price', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const prezzo = Number(req.body.prezzo);
 
-    if (!id) {
-      return res.status(400).json({ error: 'ID prodotto non valido' });
+    if (!isNonNegativeInteger(id) || id <= 0) {
+      return sendError(res, 400, 'ID prodotto non valido');
     }
 
     if (!isNonNegativeNumber(prezzo)) {
-      return res.status(400).json({ error: 'Prezzo non valido' });
+      return sendError(res, 400, 'Prezzo non valido');
     }
 
     const { data: product, error: productError } = await supabase
@@ -550,11 +699,11 @@ app.patch('/api/admin/products/:id/price', async (req, res) => {
 
     if (productError) {
       console.error('Errore lettura prodotto prezzo:', productError);
-      return res.status(500).json({ error: 'Errore lettura prodotto' });
+      return sendError(res, 500, 'Errore lettura prodotto');
     }
 
     if (!product) {
-      return res.status(404).json({ error: 'Prodotto non trovato' });
+      return sendError(res, 404, 'Prodotto non trovato');
     }
 
     const { data, error } = await supabase
@@ -566,7 +715,7 @@ app.patch('/api/admin/products/:id/price', async (req, res) => {
 
     if (error) {
       console.error('Errore update prezzo:', error);
-      return res.status(500).json({ error: 'Errore aggiornamento prezzo' });
+      return sendError(res, 500, 'Errore aggiornamento prezzo');
     }
 
     return res.json({
@@ -575,23 +724,19 @@ app.patch('/api/admin/products/:id/price', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore update price:', error);
-
-    return res.status(500).json({
-      error: 'Errore aggiornamento prezzo',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore aggiornamento prezzo');
   }
 });
 
 // =========================
-// DELETE PRODUCT
+// ADMIN - DELETE PRODUCT
 // =========================
-app.delete('/api/admin/products/:id', async (req, res) => {
+app.delete('/api/admin/products/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
 
-    if (!id) {
-      return res.status(400).json({ error: 'ID prodotto non valido' });
+    if (!isNonNegativeInteger(id) || id <= 0) {
+      return sendError(res, 400, 'ID prodotto non valido');
     }
 
     const { data: product, error: productError } = await supabase
@@ -602,11 +747,11 @@ app.delete('/api/admin/products/:id', async (req, res) => {
 
     if (productError) {
       console.error('Errore check delete product:', productError);
-      return res.status(500).json({ error: 'Errore verifica prodotto' });
+      return sendError(res, 500, 'Errore verifica prodotto');
     }
 
     if (!product) {
-      return res.status(404).json({ error: 'Prodotto non trovato' });
+      return sendError(res, 404, 'Prodotto non trovato');
     }
 
     const { data, error } = await supabase
@@ -617,7 +762,7 @@ app.delete('/api/admin/products/:id', async (req, res) => {
 
     if (error) {
       console.error('Errore delete product:', error);
-      return res.status(500).json({ error: 'Errore eliminazione prodotto' });
+      return sendError(res, 500, 'Errore eliminazione prodotto');
     }
 
     return res.json({
@@ -626,23 +771,23 @@ app.delete('/api/admin/products/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore delete product:', error);
-
-    return res.status(500).json({
-      error: 'Errore eliminazione prodotto',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore eliminazione prodotto');
   }
 });
 
 // =========================
-// DELETE USER
+// ADMIN - DELETE USER
 // =========================
-app.delete('/api/admin/users/:id', async (req, res) => {
+app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
 
-    if (!id) {
-      return res.status(400).json({ error: 'ID utente non valido' });
+    if (!isNonNegativeInteger(id) || id <= 0) {
+      return sendError(res, 400, 'ID utente non valido');
+    }
+
+    if (id === req.user.id) {
+      return sendError(res, 400, 'Non puoi eliminare te stesso');
     }
 
     const { data: user, error: userError } = await supabase
@@ -653,15 +798,15 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 
     if (userError) {
       console.error('Errore check delete user:', userError);
-      return res.status(500).json({ error: 'Errore verifica utente' });
+      return sendError(res, 500, 'Errore verifica utente');
     }
 
     if (!user) {
-      return res.status(404).json({ error: 'Utente non trovato' });
+      return sendError(res, 404, 'Utente non trovato');
     }
 
     if (user.role === 'admin') {
-      return res.status(403).json({ error: 'Non puoi eliminare admin' });
+      return sendError(res, 403, 'Non puoi eliminare un admin');
     }
 
     const { data, error } = await supabase
@@ -672,7 +817,7 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 
     if (error) {
       console.error('Errore delete user:', error);
-      return res.status(500).json({ error: 'Errore eliminazione utente' });
+      return sendError(res, 500, 'Errore eliminazione utente');
     }
 
     return res.json({
@@ -681,12 +826,15 @@ app.delete('/api/admin/users/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Errore delete user:', error);
-
-    return res.status(500).json({
-      error: 'Errore eliminazione utente',
-      dettaglio: error.message
-    });
+    return sendError(res, 500, 'Errore eliminazione utente');
   }
+});
+
+// =========================
+// 404 HANDLER
+// =========================
+app.use((req, res) => {
+  return sendError(res, 404, 'Endpoint non trovato');
 });
 
 // =========================
@@ -694,4 +842,5 @@ app.delete('/api/admin/users/:id', async (req, res) => {
 // =========================
 app.listen(PORT, () => {
   console.log(`Server acceso sulla porta ${PORT}`);
+  console.log(`Ambiente: ${isProduction ? 'production' : 'development'}`);
 });
