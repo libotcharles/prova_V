@@ -3,6 +3,8 @@ const API_URL = "https://prova-v.onrender.com/api";
 let currentUser = getLoggedUser();
 let authToken = getAuthToken();
 
+normalizeStoredSession();
+
 document.addEventListener("DOMContentLoaded", () => {
     const page = getCurrentPage();
 
@@ -54,10 +56,28 @@ function clearAuthToken() {
     localStorage.removeItem("authToken");
 }
 
+function clearSession() {
+    clearLoggedUser();
+    clearAuthToken();
+}
+
+function normalizeStoredSession() {
+    const storedUser = getLoggedUser();
+    const storedToken = getAuthToken();
+
+    if ((storedUser && !storedToken) || (!storedUser && storedToken)) {
+        clearSession();
+        currentUser = null;
+        authToken = null;
+        return;
+    }
+
+    currentUser = storedUser;
+    authToken = storedToken;
+}
+
 function getAuthHeaders(extraHeaders = {}) {
-    const headers = {
-        ...extraHeaders
-    };
+    const headers = { ...extraHeaders };
 
     if (authToken) {
         headers.Authorization = `Bearer ${authToken}`;
@@ -69,12 +89,12 @@ function getAuthHeaders(extraHeaders = {}) {
 /* LOGIN */
 function initLoginPage() {
     if (currentUser && authToken && currentUser.role === "admin") {
-        window.location.href = "admin.html";
+        window.location.replace("admin.html");
         return;
     }
 
     if (currentUser && authToken && currentUser.role === "user") {
-        window.location.href = "user.html";
+        window.location.replace("user.html");
         return;
     }
 
@@ -120,17 +140,15 @@ async function loginUser() {
         setAuthToken(data.token);
         setLoggedUser(data.user);
 
-        showMessage(messageBox, "Login effettuato con successo.", "success");
-
         if (data.user.role === "admin") {
-            window.location.href = "admin.html";
+            window.location.replace("admin.html");
         } else {
-            window.location.href = "user.html";
+            window.location.replace("user.html");
         }
     } catch (error) {
         showMessage(messageBox, "Errore di connessione al server.", "error");
     } finally {
-        setButtonLoading("login-submit", false);
+        setButtonLoading("login-submit", false, "Accedi");
     }
 }
 
@@ -158,7 +176,11 @@ async function registerUser() {
     }
 
     if (!isValidPassword(password)) {
-        showMessage(messageBox, "La password deve avere almeno 6 caratteri e almeno un numero.", "error");
+        showMessage(
+            messageBox,
+            "La password deve avere almeno 6 caratteri e almeno un numero.",
+            "error"
+        );
         return;
     }
 
@@ -185,15 +207,19 @@ async function registerUser() {
             return;
         }
 
-        showMessage(messageBox, "Registrazione completata. Verrai reindirizzato al login...", "success");
+        showMessage(
+            messageBox,
+            "Registrazione completata. Verrai reindirizzato al login...",
+            "success"
+        );
 
         setTimeout(() => {
-            window.location.href = "index.html";
+            window.location.replace("index.html");
         }, 1400);
     } catch (error) {
         showMessage(messageBox, "Errore di connessione al server.", "error");
     } finally {
-        setButtonLoading("register-submit", false);
+        setButtonLoading("register-submit", false, "Registrati");
     }
 }
 
@@ -213,12 +239,12 @@ function isValidUsername(username) {
 /* USER */
 function initUserPage() {
     if (!currentUser || !authToken) {
-        window.location.href = "index.html";
+        window.location.replace("index.html");
         return;
     }
 
     if (currentUser.role === "admin") {
-        window.location.href = "admin.html";
+        window.location.replace("admin.html");
         return;
     }
 
@@ -270,9 +296,9 @@ async function loadUserPage() {
         const roleEl = document.getElementById("userRole");
         const creditsEl = document.getElementById("userCredits");
 
-        if (nameEl) nameEl.innerText = currentUser.username;
-        if (roleEl) roleEl.innerText = currentUser.role;
-        if (creditsEl) creditsEl.innerText = currentUser.crediti;
+        if (nameEl) nameEl.innerText = freshUser.username;
+        if (roleEl) roleEl.innerText = freshUser.role;
+        if (creditsEl) creditsEl.innerText = freshUser.crediti;
 
         renderUserProducts(prodotti);
     } catch (error) {
@@ -327,7 +353,7 @@ async function compra(prodottoId, clickedButton = null) {
     try {
         if (clickedButton) {
             clickedButton.disabled = true;
-            clickedButton.dataset.oldText = clickedButton.innerText;
+            clickedButton.dataset.originalText = clickedButton.innerText;
             clickedButton.innerText = "Acquisto...";
         }
 
@@ -336,9 +362,7 @@ async function compra(prodottoId, clickedButton = null) {
             headers: getAuthHeaders({
                 "Content-Type": "application/json"
             }),
-            body: JSON.stringify({
-                prodottoId
-            })
+            body: JSON.stringify({ prodottoId })
         });
 
         const data = await safeJson(res);
@@ -360,7 +384,7 @@ async function compra(prodottoId, clickedButton = null) {
     } finally {
         if (clickedButton) {
             clickedButton.disabled = false;
-            clickedButton.innerText = clickedButton.dataset.oldText || "Acquista";
+            clickedButton.innerText = clickedButton.dataset.originalText || "Acquista";
         }
     }
 }
@@ -368,12 +392,12 @@ async function compra(prodottoId, clickedButton = null) {
 /* ADMIN */
 function initAdminPage() {
     if (!currentUser || !authToken) {
-        window.location.href = "index.html";
+        window.location.replace("index.html");
         return;
     }
 
     if (currentUser.role !== "admin") {
-        window.location.href = "user.html";
+        window.location.replace("user.html");
         return;
     }
 
@@ -411,12 +435,14 @@ async function loadAdminPage() {
         if (res.status === 403) {
             showAdminMessage("Accesso riservato agli admin.", "error");
             setTimeout(() => {
-                window.location.href = "user.html";
+                window.location.replace("user.html");
             }, 1000);
             return;
         }
 
-        if (!res.ok) throw new Error(data.error || "Errore caricamento dati");
+        if (!res.ok) {
+            throw new Error(data.error || "Errore caricamento dati");
+        }
 
         const profili = Array.isArray(data.profili) ? data.profili : [];
         const prodotti = Array.isArray(data.prodotti) ? data.prodotti : [];
@@ -580,7 +606,7 @@ async function aggiungiProdotto() {
     } catch (error) {
         showAdminMessage("⚠️ Errore di connessione al server.", "error");
     } finally {
-        setButtonLoading("add-product-btn", false);
+        setButtonLoading("add-product-btn", false, "Aggiungi Prodotto");
     }
 }
 
@@ -629,7 +655,7 @@ async function creaUtenteDaAdmin() {
     } catch (error) {
         showAdminMessage("⚠️ Errore di connessione al server.", "error");
     } finally {
-        setButtonLoading("create-user-btn", false);
+        setButtonLoading("create-user-btn", false, "Crea Utente");
     }
 }
 
@@ -829,16 +855,14 @@ async function deleteUser(userId) {
 
 /* LOGOUT */
 function logoutUser() {
-    clearLoggedUser();
-    clearAuthToken();
-    window.location.href = "index.html";
+    clearSession();
+    window.location.replace("index.html");
 }
 
 function handleUnauthorized() {
-    clearLoggedUser();
-    clearAuthToken();
+    clearSession();
     alert("Sessione scaduta o non valida. Effettua di nuovo il login.");
-    window.location.href = "index.html";
+    window.location.replace("index.html");
 }
 
 /* UTILS */
@@ -889,11 +913,16 @@ function setButtonLoading(buttonId, isLoading, loadingText = "Caricamento...") {
     if (!btn) return;
 
     if (isLoading) {
-        btn.dataset.originalText = btn.innerHTML;
+        if (!btn.dataset.originalText) {
+            btn.dataset.originalText = btn.innerHTML;
+        }
         btn.disabled = true;
         btn.innerHTML = loadingText;
     } else {
         btn.disabled = false;
-        btn.innerHTML = btn.dataset.originalText || btn.innerHTML;
+        btn.innerHTML = loadingText || btn.dataset.originalText || btn.innerHTML;
+        if (btn.dataset.originalText) {
+            btn.innerHTML = btn.dataset.originalText;
+        }
     }
 }
