@@ -283,6 +283,27 @@ app.post('/api/admin/products', async (req, res) => {
 
 });
 
+
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('profilo')
+      .select('*')
+      .order('id');
+
+    if (error) throw error;
+
+    res.json(users);
+  } catch (error) {
+    console.error('Errore get users:', error);
+    res.status(500).json({
+      error: 'Errore caricamento utenti',
+      dettaglio: error.message
+    });
+  }
+});
+
 // =========================
 // DELETE PRODUCT
 // =========================
