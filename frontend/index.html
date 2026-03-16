@@ -34,7 +34,7 @@
         <input type="password" id="login-password" placeholder="Inserisci password">
       </div>
 
-      <button class="btn-primary auth-btn" onclick="loginUser()">
+      <button id="login-submit" class="btn-primary auth-btn">
         Accedi
       </button>
 
@@ -45,50 +45,6 @@
     </div>
   </div>
 
-  <script>
-    const API_URL = "https://prova-v.onrender.com/api";
-
-    async function loginUser() {
-      const username = document.getElementById("login-username").value.trim();
-      const password = document.getElementById("login-password").value.trim();
-      const messageBox = document.getElementById("login-message");
-
-      messageBox.className = "message-box";
-      messageBox.innerHTML = "";
-
-      if (!username || !password) {
-        messageBox.className = "message-box error";
-        messageBox.innerHTML = "Inserisci username e password.";
-        return;
-      }
-
-      try {
-        const res = await fetch(`${API_URL}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          messageBox.className = "message-box error";
-          messageBox.innerHTML = data.error || "Credenziali non valide.";
-          return;
-        }
-
-        localStorage.setItem("loggedUser", JSON.stringify(data.user));
-
-        if (data.user.role === "admin") {
-          window.location.href = "admin.html";
-        } else {
-          window.location.href = "user.html";
-        }
-      } catch (error) {
-        messageBox.className = "message-box error";
-        messageBox.innerHTML = "Errore di connessione al server.";
-      }
-    }
-  </script>
+  <script src="script.js" defer></script>
 </body>
 </html>
