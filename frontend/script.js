@@ -787,7 +787,7 @@ async function deleteProduct(productId) {
         const res = await fetch(`${API_URL}/admin/products/${productId}`, {
             method: "DELETE",
             headers: getAuthHeaders({
-                "Cache-Control": "no-cache"
+                
             })
         });
 
