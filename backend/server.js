@@ -59,8 +59,8 @@ app.use(cors({
 app.use(helmet());
 app.use(express.json({ limit: "10kb" }));
 
-// Se hai una cartella public con html/css/js
-app.use(express.static(path.join(__dirname, "public")));
+
+app.use(express.static(path.join(__dirname, "..", "frontend")));
 
 // =========================
 // RATE LIMIT LOGIN
@@ -156,7 +156,7 @@ function requireAdmin(req, res, next) {
 // ROOT
 // =========================
 app.get("/", (req, res) => {
-  return res.sendFile(path.join(__dirname, "public", "index.html"));
+ return res.sendFile(path.join(__dirname, "..", "frontend", "index.html"));
 });
 
 // =========================
@@ -860,6 +860,20 @@ app.delete("/api/admin/users/:id", requireAuth, requireAdmin, async (req, res) =
     console.error("Errore delete user:", error);
     return sendError(res, 500, "Errore eliminazione utente");
   }
+});
+
+
+app.get("/:page", (req, res, next) => {
+  const options = {
+    root: path.join(__dirname, "..", "frontend"),
+  };
+  const fileName = `${req.params.page}.html`;
+  
+  res.sendFile(fileName, options, (err) => {
+    if (err) {
+      next(); // Se il file non esiste, passa al 404
+    }
+  });
 });
 
 // =========================
