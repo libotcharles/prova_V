@@ -751,8 +751,12 @@ app.delete("/api/admin/products/:id", requireAuth, requireAdmin, async (req, res
   try {
     const id = Number(req.params.id);
 
-    if (!isNonNegativeInteger(id) || id <= 0) {
-      return sendError(res, 400, "ID prodotto non valido");
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "ID prodotto non valido",
+        debug: { paramId: req.params.id, parsedId: id }
+      });
     }
 
     const { data: product, error: productError } = await supabase
@@ -762,12 +766,19 @@ app.delete("/api/admin/products/:id", requireAuth, requireAdmin, async (req, res
       .maybeSingle();
 
     if (productError) {
-      console.error("Errore check delete product:", productError);
-      return sendError(res, 500, "Errore verifica prodotto");
+      return res.status(500).json({
+        success: false,
+        error: "Errore verifica prodotto",
+        debug: productError
+      });
     }
 
     if (!product) {
-      return sendError(res, 404, "Prodotto non trovato");
+      return res.status(404).json({
+        success: false,
+        error: "Prodotto non trovato",
+        debug: { id }
+      });
     }
 
     const { data, error } = await supabase
@@ -777,8 +788,11 @@ app.delete("/api/admin/products/:id", requireAuth, requireAdmin, async (req, res
       .select("id, nome, prezzo, stock");
 
     if (error) {
-      console.error("Errore delete product:", error);
-      return sendError(res, 500, "Errore eliminazione prodotto");
+      return res.status(500).json({
+        success: false,
+        error: "Errore eliminazione prodotto",
+        debug: error
+      });
     }
 
     return res.json({
@@ -786,11 +800,13 @@ app.delete("/api/admin/products/:id", requireAuth, requireAdmin, async (req, res
       deleted: data
     });
   } catch (error) {
-    console.error("Errore delete product:", error);
-    return sendError(res, 500, "Errore eliminazione prodotto");
+    return res.status(500).json({
+      success: false,
+      error: "Errore eliminazione prodotto",
+      debug: error.message
+    });
   }
 });
-
 // =========================
 // ADMIN - ELIMINA UTENTE
 // =========================
